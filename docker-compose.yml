@@ -1,0 +1,121 @@
+# Local development stack for the Secure AI Research Platform.
+# PUBLIC / synthetic data only — do not place CUI or classified data in these services.
+#
+# Core services start by default: db (Postgres+pgvector), minio, ollama, app.
+# Optional services are gated behind profiles:
+#   docker compose --profile identity up      # adds keycloak
+#   docker compose --profile monitoring up    # adds otel-collector
+#
+# Models are NOT auto-pulled. After the stack is up:  make pull-model
+#
+# SECURITY POSTURE (local dev):
+#   * Every published port is bound to 127.0.0.1, so these services are reachable
+#     only from this host, never from the LAN. Do not change this to 0.0.0.0 without
+#     putting authentication and network controls in front of each service.
+#   * The credential defaults below (sair / minioadmin / admin) are frictionless
+#     LOCAL-DEV placeholders for synthetic data only. For any shared or remote
+#     deployment, set real secrets in .env (do not rely on these fallbacks) and
+#     reconsider which ports are published at all.
+
+name: secure-ai-research
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${SAIR_DB_USER:-sair}
+      POSTGRES_PASSWORD: ${SAIR_DB_PASSWORD:-sair}
+      POSTGRES_DB: ${SAIR_DB_NAME:-sair}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SAIR_DB_USER:-sair} -d ${SAIR_DB_NAME:-sair}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    # Pinned, not :latest (supply-chain posture). Tags chosen offline — run
+    # `docker compose pull` once to confirm they resolve, or bump to current stable.
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${SAIR_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:0.3.6
+    # Published on loopback only; the app reaches Ollama over the compose network
+    # at http://ollama:11434. Host access (127.0.0.1) is for `ollama` CLI / debugging.
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: infrastructure/containers/Dockerfile
+    command: uvicorn secure_ai_research.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      SAIR_DB_URL: postgresql://${SAIR_DB_USER:-sair}:${SAIR_DB_PASSWORD:-sair}@db:5432/${SAIR_DB_NAME:-sair}
+      SAIR_MINIO_ENDPOINT: minio:9000
+      SAIR_MINIO_ACCESS_KEY: ${SAIR_MINIO_ACCESS_KEY:-minioadmin}
+      SAIR_MINIO_SECRET_KEY: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
+      SAIR_OLLAMA_HOST: http://ollama:11434
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${SAIR_KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${SAIR_KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "127.0.0.1:8080:8080"
+    profiles: ["identity"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./infrastructure/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    profiles: ["monitoring"]
+
+volumes:
+  db-data:
+  minio-data:
+  ollama-data:

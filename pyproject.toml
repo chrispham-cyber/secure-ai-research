@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secure-ai-research"
+version = "0.1.0"
+description = "Starter scaffold for a secure AI-assisted cybersecurity research platform (public/synthetic data only)."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Chris Pham" }]
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.32,<1.0",
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.6,<3.0",
+    "python-dotenv>=1.0,<2.0",
+    "httpx>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<10.0",
+    "ruff>=0.7,<1.0",
+    "black>=24.10,<27.0",
+    "mypy>=1.13,<2.0",
+    "pip-tools>=7.4,<8.0",
+    "pip-audit>=2.7,<3.0",
+    "cyclonedx-bom>=4.6,<6.0",
+    "pre-commit>=4.0,<5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_redundant_casts = true
+files = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires live services (Postgres/MinIO/Ollama); skipped in CI",
+]
+filterwarnings = [
+    # Starlette's TestClient warns when httpx (not the very new httpx2) is the
+    # installed transport. Upstream-only and benign; httpx2 is too new to pin.
+    # Message-only match (its warning category is not a DeprecationWarning subclass).
+    "ignore:Using `httpx` with `starlette.testclient`",
+]
