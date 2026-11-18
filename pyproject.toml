@@ -58,3 +58,9 @@ testpaths = ["tests"]
 markers = [
     "integration: requires live services (Postgres/MinIO/Ollama); skipped in CI",
 ]
+filterwarnings = [
+    # Starlette's TestClient warns when httpx (not the very new httpx2) is the
+    # installed transport. Upstream-only and benign; httpx2 is too new to pin.
+    # Message-only match (its warning category is not a DeprecationWarning subclass).
+    "ignore:Using `httpx` with `starlette.testclient`",
+]
