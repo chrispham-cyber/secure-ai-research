@@ -1,0 +1,108 @@
+# Local development stack for the Secure AI Research Platform.
+# PUBLIC / synthetic data only — do not place CUI or classified data in these services.
+#
+# Core services start by default: db (Postgres+pgvector), minio, ollama, app.
+# Optional services are gated behind profiles:
+#   docker compose --profile identity up      # adds keycloak
+#   docker compose --profile monitoring up    # adds otel-collector
+#
+# Models are NOT auto-pulled. After the stack is up:  make pull-model
+
+name: secure-ai-research
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${SAIR_DB_USER:-sair}
+      POSTGRES_PASSWORD: ${SAIR_DB_PASSWORD:-sair}
+      POSTGRES_DB: ${SAIR_DB_NAME:-sair}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SAIR_DB_USER:-sair} -d ${SAIR_DB_NAME:-sair}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${SAIR_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: infrastructure/containers/Dockerfile
+    command: uvicorn secure_ai_research.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      SAIR_DB_URL: postgresql://${SAIR_DB_USER:-sair}:${SAIR_DB_PASSWORD:-sair}@db:5432/${SAIR_DB_NAME:-sair}
+      SAIR_MINIO_ENDPOINT: minio:9000
+      SAIR_MINIO_ACCESS_KEY: ${SAIR_MINIO_ACCESS_KEY:-minioadmin}
+      SAIR_MINIO_SECRET_KEY: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
+      SAIR_OLLAMA_HOST: http://ollama:11434
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${SAIR_KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${SAIR_KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    profiles: ["identity"]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./infrastructure/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    profiles: ["monitoring"]
+
+volumes:
+  db-data:
+  minio-data:
+  ollama-data:
