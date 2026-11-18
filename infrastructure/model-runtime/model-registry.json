@@ -1,0 +1,15 @@
+{
+  "_comment": "Synthetic placeholder entry. Replace with real approved models and their SHA-256 hashes before use. No weights are committed to this repository.",
+  "models": [
+    {
+      "name": "example/local-llm",
+      "version": "0.0.0-synthetic",
+      "publisher": "synthetic",
+      "license": "UNKNOWN",
+      "source": "local",
+      "sha256": null,
+      "format": "safetensors",
+      "approval_status": "UNVERIFIED"
+    }
+  ]
+}
