@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Secrets & local config  (never commit real secrets)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# Research data & model weights  (public/synthetic only — never commit data or weights)
+data/
+models/
+audit/
+*.sbom.json
+sbom.json
+
+# Service volumes
+.volumes/
+pgdata/
+miniodata/
+ollama-data/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

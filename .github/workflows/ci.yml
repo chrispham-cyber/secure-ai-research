@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint · type · unit · supply-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (pinned)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e . --no-deps
+
+      - name: Ruff (lint)
+        run: ruff check .
+
+      - name: Black (format check)
+        run: black --check .
+
+      - name: Mypy (type check)
+        run: mypy src
+
+      - name: Pytest (unit only — no live services)
+        run: pytest -m "not integration"
+
+      - name: pip-audit (advisory report, non-gating)
+        continue-on-error: true
+        run: pip-audit
+
+      - name: SBOM (CycloneDX)
+        continue-on-error: true
+        run: cyclonedx-py environment -o sbom.json
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          if-no-files-found: ignore
+
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
