@@ -17,8 +17,13 @@ approved for CUI or classified information.
 - Documented `NotImplementedError` stubs for all RAG/agent code, each pointing at
   the ROADMAP phase that implements it.
 - Dev stack: docker-compose (Postgres+pgvector, MinIO, Ollama), devcontainer,
-  Makefile, scripts.
-- Docs: architecture, STRIDE threat model, 24-week roadmap, research ledger,
-  per-directory READMEs, Phase-5 templates, capstone outline.
+  Makefile, scripts. All published ports bound to `127.0.0.1`.
+- Supply-chain tooling: CycloneDX SBOM (`make sbom`), pip-audit, gitleaks,
+  Dependabot, model-hash pinning.
+- Docs: README, SECURITY, CONTRIBUTING, architecture (system design, trust
+  boundaries, data flow), STRIDE threat model, 24-week roadmap, research ledger,
+  per-directory READMEs, Phase-5 assurance templates, capstone outline.
+- Sample synthetic benchmark (`evaluation/benchmarks/sample-benchmark.jsonl`) and
+  prompt-injection corpus policy.
 
 _This is a work in progress; see [ROADMAP.md](ROADMAP.md)._
