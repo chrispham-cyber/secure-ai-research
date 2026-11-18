@@ -27,7 +27,9 @@ def main() -> int:
         model_version="",
         prompt_template_version="",
     )
-    print(template.model_dump_json(indent=2))
+    # One compact JSON line, matching audit.record.emit, so the documented
+    # ``>> audit/research-records.jsonl`` workflow produces a valid JSON Lines file.
+    print(template.model_dump_json())
     return 0
 
 
