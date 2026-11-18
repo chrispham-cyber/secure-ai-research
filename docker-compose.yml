@@ -7,6 +7,15 @@
 #   docker compose --profile monitoring up    # adds otel-collector
 #
 # Models are NOT auto-pulled. After the stack is up:  make pull-model
+#
+# SECURITY POSTURE (local dev):
+#   * Every published port is bound to 127.0.0.1, so these services are reachable
+#     only from this host, never from the LAN. Do not change this to 0.0.0.0 without
+#     putting authentication and network controls in front of each service.
+#   * The credential defaults below (sair / minioadmin / admin) are frictionless
+#     LOCAL-DEV placeholders for synthetic data only. For any shared or remote
+#     deployment, set real secrets in .env (do not rely on these fallbacks) and
+#     reconsider which ports are published at all.
 
 name: secure-ai-research
 
@@ -18,7 +27,7 @@ services:
       POSTGRES_PASSWORD: ${SAIR_DB_PASSWORD:-sair}
       POSTGRES_DB: ${SAIR_DB_NAME:-sair}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -34,8 +43,8 @@ services:
       MINIO_ROOT_USER: ${SAIR_MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -46,8 +55,10 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    # Published on loopback only; the app reaches Ollama over the compose network
+    # at http://ollama:11434. Host access (127.0.0.1) is for `ollama` CLI / debugging.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
@@ -68,7 +79,7 @@ services:
       SAIR_MINIO_SECRET_KEY: ${SAIR_MINIO_SECRET_KEY:-minioadmin}
       SAIR_OLLAMA_HOST: http://ollama:11434
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -89,7 +100,7 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${SAIR_KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${SAIR_KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     profiles: ["identity"]
 
   otel-collector:
@@ -98,8 +109,8 @@ services:
     volumes:
       - ./infrastructure/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     profiles: ["monitoring"]
 
 volumes:
