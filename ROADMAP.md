@@ -46,8 +46,8 @@ infrastructure, and the real security primitives, so later phases build on solid
 
 **Objective:** make the agentic and access-control boundaries real and tested.
 
-- [ ] Week 9 — Agent tool functions (`search_cve/attack/research`) with permission checks **outside** the LLM
-- [ ] Week 10 — Role model + ABAC on retrieval; deny-by-default; two-user information-disclosure test
+- [x] Week 9 — Agent tool functions (`search_cve/attack/research`) with permission checks **outside** the LLM
+- [x] Week 10 — Role model + ABAC on retrieval; deny-by-default; two-user information-disclosure test
 - [ ] Week 11 — Prompt-injection test harness + synthetic malicious-document corpus (clearly labeled)
 - [ ] Week 12 — Excessive-agency guards: read-only tools, argument validation, rate limits
 

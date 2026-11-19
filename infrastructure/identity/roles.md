@@ -21,6 +21,25 @@ permitted only if the role allows the action *and* the document's attributes
 Separation of duties is deliberate: the analyst who drafts is not the reviewer who
 accepts; the steward who classifies data is not the admin who approves models.
 
+## Retrieval sensitivity tiers (ABAC)
+
+Within the PUBLIC lane, every document carries a **sensitivity** attribute — `ROUTINE`
+(the default) or `RESTRICTED`. This is the concrete form of `senior_analyst`'s "wider
+retrieval scope":
+
+- **ROUTINE** documents are retrievable by any role the allowlist grants retrieval
+  (`research_analyst`, `senior_analyst`).
+- **RESTRICTED** documents are retrievable **only** by `senior_analyst`.
+
+`RESTRICTED` is a *privilege tier, not a handling class* — the document is still `PUBLIC`.
+Enforcement is in the pre-retrieval `authorize` gate
+([`retrieval/authz.py`](../../src/secure_ai_research/retrieval/authz.py)), so a `RESTRICTED`
+document never enters a `research_analyst`'s retrieval scope on any path (id-route or
+search), and an unauthorized request returns the same `NOT_FOUND` response as one for an
+absent document (no response-level existence oracle). See the two-user information-
+disclosure test
+[`tests/test_access_control.py`](../../tests/test_access_control.py).
+
 ## A model never inherits the analyst's privileges
 
 When an analyst runs an analysis, the model and any agent tools operate under their **own
