@@ -11,11 +11,13 @@ never a live fetch, and two runs of the benchmark produce identical results.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from importlib.resources import files
 from pathlib import Path
 
 from secure_ai_research.evaluation.injection_corpus import malicious_corpus
+from secure_ai_research.evaluation.records import EvalItem, EvalResult
 from secure_ai_research.ingestion import attack, kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import (
@@ -24,10 +26,14 @@ from secure_ai_research.ingestion.schema import (
     ResearchDocument,
     Sensitivity,
 )
+from secure_ai_research.reporting.report import citation_ids
 from secure_ai_research.research_service import ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
 from secure_ai_research.retrieval.vectorstore import InMemoryVectorStore
+
+# ATT&CK technique id shape, for routing an ``authz`` item whose query is a technique id.
+_T_ID = re.compile(r"T\d{4}(?:\.\d{3})?")
 
 # A synthetic within-PUBLIC RESTRICTED document: PUBLIC classification, RESTRICTED sensitivity,
 # a CVE-shaped id so it is reachable via the ``research_cve`` id-route. Only ``senior_analyst``
@@ -77,3 +83,48 @@ def build_benchmark_service(audit_path: Path) -> ResearchService:
     service.index(malicious_corpus())
     service.index([_restricted_doc()])
     return service
+
+
+def run_item(service: ResearchService, item: EvalItem) -> EvalResult:
+    """Execute one ``EvalItem`` against the real pipeline and capture an ``EvalResult``.
+
+    The item's ``kind`` selects the entrypoint: ``cve``/``attack`` take the id-routes,
+    ``search``/``injection`` take free-text search, and ``authz`` routes by the shape of its
+    query (a CVE id or ATT&CK id goes to the matching id-route, anything else to search).
+
+    ``retrieved_ids`` is the ids the pipeline retrieved (``res.citations``). ``cited_ids`` is
+    what the pipeline *cited*: for an id-route that is what the assembled report body cites
+    (parsed with the single citation grammar), for a search route it is the ranked returned ids
+    themselves (the search answer carries no in-body citations).
+    """
+    kind = item.kind
+    if kind == "cve":
+        res, is_id_route = service.research_cve(item.query, role=item.role), True
+    elif kind == "attack":
+        res, is_id_route = service.research_attack(item.query, role=item.role), True
+    elif kind in ("search", "injection"):
+        res, is_id_route = service.search(item.query, role=item.role), False
+    elif kind == "authz":
+        if item.query.startswith("CVE-"):
+            res, is_id_route = service.research_cve(item.query, role=item.role), True
+        elif _T_ID.fullmatch(item.query):
+            res, is_id_route = service.research_attack(item.query, role=item.role), True
+        else:
+            res, is_id_route = service.search(item.query, role=item.role), False
+    else:  # pragma: no cover - defensive; ItemKind is a closed Literal
+        raise ValueError(f"unknown EvalItem kind: {kind!r}")
+
+    retrieved_ids = tuple(c.document_id for c in res.citations)
+    cited_ids = tuple(citation_ids(res.answer)) if is_id_route else retrieved_ids
+    return EvalResult(
+        item=item,
+        outcome=res.outcome,
+        cited_ids=cited_ids,
+        retrieved_ids=retrieved_ids,
+        answer=res.answer,
+    )
+
+
+def run_benchmark(service: ResearchService, items: list[EvalItem]) -> list[EvalResult]:
+    """Run every item in list order (deterministic) and return the results."""
+    return [run_item(service, item) for item in items]
