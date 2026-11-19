@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+from secure_ai_research.agents.functions import AgentToolset
 from secure_ai_research.evaluation.benchmark import (
     RESTRICTED_CANARY,
     RESTRICTED_DOC_ID,
@@ -80,4 +81,71 @@ def run_injection_eval(service: ResearchService) -> InjectionEvalResult:
         robustness=neutralized_count / len(docs),
         retrieved=tuple(retrieved),
         failures=tuple(failures),
+    )
+
+
+# A genuinely-absent CVE id (no document carries it), for the byte-identical baseline.
+_ABSENT_CVE = "CVE-2099-9999"
+# A search probe drawn from the RESTRICTED body but NOT its canary token — ``search`` echoes
+# its own query, so using the canary as the query would both false-trigger a leak check and
+# tell us nothing. These tokens are in the body; a leak would be the canary appearing *despite*
+# a non-canary query, or the RESTRICTED id surfacing in the authorized result.
+_RESTRICTED_PROBE_QUERY = "sensitive internal incident"
+
+
+class InfoDisclosureEvalResult(BaseModel):
+    """Outcome of the two-user RESTRICTED scenario across every retrieval path."""
+
+    model_config = ConfigDict(frozen=True)
+
+    probes: int
+    disclosures: int
+    failures: tuple[str, ...]
+
+
+def _same_response(a: ResearchResult, b: ResearchResult) -> bool:
+    """True iff two results are byte-identical ignoring the per-call random ``research_id``.
+
+    Compares ``outcome``, ``answer``, and the full citation triples — a status-only check would
+    miss a response oracle (spec review focus 3).
+    """
+    cites = lambda r: [(c.document_id, c.source_url, c.passage) for c in r.citations]  # noqa: E731
+    return a.outcome == b.outcome and a.answer == b.answer and cites(a) == cites(b)
+
+
+def _leaks_restricted(res: ResearchResult) -> bool:
+    """True iff a result exposes any RESTRICTED byte: the canary text or the RESTRICTED id."""
+    return RESTRICTED_CANARY in res.answer or RESTRICTED_DOC_ID in {
+        c.document_id for c in res.citations
+    }
+
+
+def run_info_disclosure_eval(service: ResearchService) -> InfoDisclosureEvalResult:
+    """Measure information disclosure of the RESTRICTED document to ``research_analyst``.
+
+    Four probes across every path a non-senior caller could try — the id-route, free-text
+    search, and the same two through the ``AgentToolset`` — each a disclosure iff the response
+    differs from a genuinely-absent id (an existence oracle) or exposes a RESTRICTED byte.
+    ``senior_analyst`` legitimately sees the document; that positive control lives in the tests
+    so "zero disclosures" means access control works, not that the document is unreachable.
+    """
+    absent = service.research_cve(_ABSENT_CVE, role="research_analyst")
+    tools = AgentToolset(service, role="research_analyst")
+
+    id_route = service.research_cve(RESTRICTED_DOC_ID, role="research_analyst")
+    search = service.search(_RESTRICTED_PROBE_QUERY, role="research_analyst")
+    toolset_id = tools.search_cve(RESTRICTED_DOC_ID)
+    toolset_search = tools.search_research(_RESTRICTED_PROBE_QUERY)
+
+    probes: list[tuple[str, bool]] = [
+        ("id-route", not _same_response(id_route, absent) or _leaks_restricted(id_route)),
+        ("search", _leaks_restricted(search)),
+        ("toolset-id", not _same_response(toolset_id, absent) or _leaks_restricted(toolset_id)),
+        ("toolset-search", _leaks_restricted(toolset_search)),
+    ]
+    failures = tuple(label for label, disclosed in probes if disclosed)
+    return InfoDisclosureEvalResult(
+        probes=len(probes),
+        disclosures=len(failures),
+        failures=failures,
     )
