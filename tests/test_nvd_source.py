@@ -5,6 +5,7 @@ from importlib.resources import files
 import pytest
 
 from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
+from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 
 
 def test_fetch_builds_pinned_url_and_generic_ua():
@@ -150,3 +151,37 @@ def test_malformed_cve_id_rejected_before_path(tmp_path):
     with pytest.raises(ValueError):
         CachingCveSource(spy, tmp_path).fetch_raw("../escape")
     assert spy.calls == 0 and list(tmp_path.iterdir()) == []
+
+
+def test_http_error_raises_cve_unavailable():
+    def opener(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
+
+    with pytest.raises(CveUnavailable):
+        NvdApiSource(opener=opener).fetch_raw("CVE-2021-44228")
+
+
+def test_read_timeout_raises_cve_unavailable():
+    # A socket read timeout surfaces as a bare TimeoutError (an OSError), not a URLError;
+    # it must still become CveUnavailable, not escape as a 500 / no-audit.
+    def opener(req, timeout):
+        raise TimeoutError("timed out")
+
+    with pytest.raises(CveUnavailable):
+        NvdApiSource(opener=opener).fetch_raw("CVE-2021-44228")
+
+
+def test_caching_empty_feed_raises_cve_not_found(tmp_path):
+    spy = _Spy(b'{"vulnerabilities": []}')
+    with pytest.raises(CveNotFound, match="no usable record"):
+        CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert not (tmp_path / "CVE-2099-0001.json").exists()
+
+
+def test_caching_malformed_raises_cve_unavailable(tmp_path):
+    # Top-level JSON list → nvd.load fails with a non-ValueError (AttributeError); it must
+    # still surface as CveUnavailable, and nothing may be cached.
+    spy = _Spy(b"[]")
+    with pytest.raises(CveUnavailable):
+        CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert not (tmp_path / "CVE-2099-0001.json").exists()

@@ -13,5 +13,13 @@ from typing import Protocol
 Opener = Callable[[urllib.request.Request, float], bytes]
 
 
+class CveNotFound(ValueError):
+    """The upstream feed parsed cleanly but held no usable record for the CVE (absent)."""
+
+
+class CveUnavailable(ValueError):
+    """The upstream source could not be reached or returned an unparseable response."""
+
+
 class CveSource(Protocol):
     def fetch_raw(self, cve_id: str) -> bytes: ...

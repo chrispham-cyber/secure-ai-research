@@ -51,6 +51,11 @@ def research_cve(
             status_code=403,
             content={"detail": "role not authorized", "research_id": res.research_id},
         )
+    if res.outcome is Outcome.FETCH_ERROR:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "upstream source unavailable", "research_id": res.research_id},
+        )
     return JSONResponse(
         status_code=404,
         content={"detail": f"no document for {cve_id}", "research_id": res.research_id},

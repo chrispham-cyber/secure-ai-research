@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     nvd_api_key: str | None = None
     nvd_cache_dir: Path = Path("data/nvd-cache")
     nvd_fetch_timeout: float = 30.0
+    # Opt-in: when true, the live /research/cve/{id} endpoint may fetch a CVE absent from
+    # the corpus from NVD. Default false keeps the endpoint fully offline/fixture-backed.
+    allow_live_fetch: bool = False
 
     # This repository handles public/synthetic data only. The classification is
     # pinned to PUBLIC on purpose; an LLM never decides a document's class.

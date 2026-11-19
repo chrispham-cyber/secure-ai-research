@@ -17,7 +17,12 @@ import urllib.request
 from pathlib import Path
 
 from secure_ai_research.ingestion import nvd
-from secure_ai_research.ingestion.source import CveSource, Opener
+from secure_ai_research.ingestion.source import (
+    CveNotFound,
+    CveSource,
+    CveUnavailable,
+    Opener,
+)
 
 # Pinned host (§ design 4/9). cve_id only fills the ``cveId`` query value.
 NVD_CVE_API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -70,10 +75,12 @@ class NvdApiSource:
         except urllib.error.HTTPError as exc:
             # api_key is never placed in a message (threat: info disclosure).
             if exc.code in (403, 429):
-                raise ValueError("NVD rate limit / forbidden (set SAIR_NVD_API_KEY?)") from exc
-            raise ValueError(f"NVD fetch failed for {cve_id}: HTTP {exc.code}") from exc
-        except urllib.error.URLError as exc:
-            raise ValueError(f"NVD fetch failed for {cve_id}: {exc.reason}") from exc
+                raise CveUnavailable("NVD rate limit / forbidden (set SAIR_NVD_API_KEY?)") from exc
+            raise CveUnavailable(f"NVD fetch failed for {cve_id}: HTTP {exc.code}") from exc
+        except OSError as exc:
+            # OSError covers URLError (itself an OSError) and a bare TimeoutError raised
+            # from resp.read() after the connection opened. api_key never appears here.
+            raise CveUnavailable(f"NVD fetch failed for {cve_id}: {exc}") from exc
 
 
 class CachingCveSource:
@@ -96,8 +103,12 @@ class CachingCveSource:
         if path.exists():
             return path.read_bytes()
         raw = self._inner.fetch_raw(cve_id)
-        if not nvd.load(raw):  # raises on malformed; [] on empty "vulnerabilities"
-            raise ValueError(f"NVD returned no usable record for {cve_id}")
+        try:
+            docs = nvd.load(raw)
+        except Exception as exc:  # any parse failure (incl. non-ValueError) → unavailable
+            raise CveUnavailable(f"NVD returned an unparseable record for {cve_id}: {exc}") from exc
+        if not docs:  # parsed cleanly but empty "vulnerabilities" → absent, not an error
+            raise CveNotFound(f"NVD returned no usable record for {cve_id}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_bytes(raw)

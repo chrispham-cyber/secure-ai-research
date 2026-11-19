@@ -7,6 +7,7 @@ from secure_ai_research.audit.record import read_records
 from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
+from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.research_service import Outcome, ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
@@ -128,3 +129,142 @@ def test_multiline_answer_round_trips_as_one_record(tmp_path):
     records = read_records(audit)
     assert len(records) == 1  # multi-line model_output stays one append-only record
     assert "\n" in records[0].model_output  # genuinely multi-line
+
+
+# --- fetch-on-miss (Phase-2 fetch-on-miss slice) ---
+
+
+def _one_doc(cve_id: str = "CVE-2099-7777") -> IngestedDocument:
+    doc = ResearchDocument(
+        document_id=cve_id,
+        source="NVD",
+        document_type=DocumentType.VULNERABILITY,
+        classification=Classification.PUBLIC,
+        created_at=date(2099, 1, 1),
+        source_url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",  # type: ignore[arg-type]
+        integrity_hash="sha256:" + "0" * 64,
+    )
+    return IngestedDocument(doc, f"{cve_id} remote code execution in the widget parser")
+
+
+class _FakeFetch:
+    def __init__(self, docs=None, exc=None):
+        self.docs = docs
+        self.exc = exc
+        self.calls = 0
+
+    def __call__(self, cve_id):
+        self.calls += 1
+        if self.exc:
+            raise self.exc
+        return self.docs
+
+
+def _svc_with_fetch(audit, fetch) -> ResearchService:
+    # Mirror the live app: a non-empty fixture corpus so an authorized role clears the
+    # role-level DENIED gate, then the fetch-on-miss branch handles an un-indexed CVE.
+    svc = ResearchService(
+        HashingEmbedder(), InMemoryVectorStore(), authorize, audit, fetch_missing=fetch
+    )
+    svc.index(_docs())
+    return svc
+
+
+def test_fetch_on_miss_returns_cited_answer(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(docs=[_one_doc("CVE-2099-7777")])
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.OK
+    assert fetch.calls == 1
+    assert [c for c in res.citations if c.document_id == "CVE-2099-7777"]
+    assert len(read_records(audit)) == 1  # exactly one audit record for the fetched OK
+
+
+def test_fetch_absent_returns_not_found(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=CveNotFound("absent"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.NOT_FOUND
+    assert res.citations == []
+    assert len(read_records(audit)) == 1
+
+
+def test_fetch_unavailable_returns_fetch_error(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=CveUnavailable("nvd down"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert len(read_records(audit)) == 1
+
+
+def test_denied_role_never_fetches(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(docs=[_one_doc("CVE-2099-7777")])
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="")
+
+    assert res.outcome is Outcome.DENIED
+    assert fetch.calls == 0  # unauthorized callers never trigger an outbound fetch
+
+
+def test_miss_without_fetch_missing_is_not_found(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    # fetch_missing defaults to None → today's offline behavior for an un-indexed CVE.
+    res = _svc(audit).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.NOT_FOUND
+    assert len(read_records(audit)) == 1
+
+
+def test_fetch_records_name_the_fetch(tmp_path):
+    absent_audit = tmp_path / "absent.jsonl"
+    _svc_with_fetch(absent_audit, _FakeFetch(exc=CveNotFound("x"))).research_cve(
+        "CVE-2099-7777", role="research_analyst"
+    )
+    error_audit = tmp_path / "error.jsonl"
+    _svc_with_fetch(error_audit, _FakeFetch(exc=CveUnavailable("x"))).research_cve(
+        "CVE-2099-7777", role="research_analyst"
+    )
+    never_audit = tmp_path / "never.jsonl"
+    _svc(never_audit).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert "live fetch" in read_records(absent_audit)[0].conclusion
+    assert "unavailable" in read_records(error_audit)[0].conclusion
+    assert "no corpus retrieved" in read_records(never_audit)[0].conclusion
+
+
+def test_index_if_absent_is_idempotent(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    item = _one_doc("CVE-2099-7777")
+    svc._index_if_absent([item])
+    svc._index_if_absent([item])  # second call is a no-op; must not raise or duplicate
+
+    res = svc.research_cve("CVE-2099-7777", role="research_analyst")
+    assert res.outcome is Outcome.OK
+
+
+def test_fetch_oserror_becomes_fetch_error(tmp_path):
+    # fetch_missing is arbitrary injected code: a filesystem/IO failure (e.g. an unreadable
+    # or unwritable cache file) must become FETCH_ERROR with exactly one audit record —
+    # never an unhandled 500 and never a live fetch that leaves no audit trail.
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=OSError("disk full"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert len(read_records(audit)) == 1
+
+
+def test_fetch_unexpected_exception_becomes_fetch_error(tmp_path):
+    # Any non-typed failure escaping the callable (e.g. http.client.HTTPException, which is
+    # not an OSError, or a plain bug) is contained the same way: the service guarantees the
+    # invariant rather than trusting the callable to raise only the two typed errors.
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=RuntimeError("boom"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert len(read_records(audit)) == 1
