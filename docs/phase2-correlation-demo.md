@@ -36,8 +36,13 @@ So one query about **Log4Shell** returns both *that it is known-exploited in the
 advisory and its detection. One query about **T1059** returns both the ATT&CK technique and the
 SigmaHQ detection that covers it — a technique correlated with its detection.
 
-Every search also emits one audit record; for the Log4Shell pivot the record's `data_source_ids` is
-`["CISA KEV", "Sigma"]`, so the cross-source correlation is visible in the audit trail itself.
+Every search also emits one audit record. The record captures the **full ranked retrieved set**, not
+the filtered pair: for the Log4Shell pivot its `data_source_ids` is
+`["CISA KEV", "MITRE ATT&CK", "NVD", "Sigma"]` — all four sources, because the placeholder embedder's
+noisy tail pulls in unrelated NVD/ATT&CK documents (see the caveat below). The clean two-source
+correlation `{CISA KEV, SigmaHQ}` is produced by the demo's `correlate()` reference filter over those
+citations, not by the audit trail. So the audit shows the *breadth of retrieval* (and is the tamper-
+evident record of what was accessed), while the reference filter shows the *genuine correlation*.
 
 ## Run it
 

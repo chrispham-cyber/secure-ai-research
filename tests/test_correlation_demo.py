@@ -57,3 +57,5 @@ def test_one_audit_record_per_pivot_with_correlated_sources(tmp_path):
     assert len(records) == 2
     cve_rec = next(r for r in records if "KEV-CVE-2021-44228" in r.retrieved_doc_ids)
     assert {"CISA KEV", "Sigma"} <= set(cve_rec.data_source_ids)
+    # the audit records the FULL ranked retrieved set, not the clean correlate() pair
+    assert cve_rec.data_source_ids == ["CISA KEV", "MITRE ATT&CK", "NVD", "Sigma"]
