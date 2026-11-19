@@ -13,6 +13,7 @@ request still emits an audit record, but one carrying no corpus metadata.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from pathlib import Path
 from secure_ai_research.audit.record import ResearchRecord, emit
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import ResearchDocument
+from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.reporting.report import build_report
 from secure_ai_research.retrieval.chunking import chunk
 from secure_ai_research.retrieval.ports import ChunkRecord, Embedder, VectorStore
@@ -32,6 +34,7 @@ class Outcome(StrEnum):
     OK = "ok"
     DENIED = "denied"
     NOT_FOUND = "not_found"
+    FETCH_ERROR = "fetch_error"
 
 
 @dataclass(frozen=True)
@@ -59,30 +62,55 @@ class ResearchService:
         authorize: Callable[[str, ResearchDocument], bool],
         audit_path: Path,
         limit: int = 5,
+        *,
+        fetch_missing: Callable[[str], list[IngestedDocument]] | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
         self._authorize = authorize
         self._audit_path = audit_path
         self._limit = limit
+        self._fetch_missing = fetch_missing
         self._docs: dict[str, ResearchDocument] = {}
+        self._lock = threading.Lock()
 
     def index(self, docs: list[IngestedDocument]) -> None:
-        for item in docs:
-            doc = item.document
-            if doc.document_id in self._docs:
-                # Fail loud rather than silently append stale duplicate chunks that
-                # would stay queryable alongside the new ones.
-                raise ValueError(f"document already indexed: {doc.document_id}")
-            self._docs[doc.document_id] = doc
-            chunks = chunk(item.text)
-            vectors = self._embedder.embed(chunks)
-            self._store.upsert(
-                [
-                    ChunkRecord(f"{doc.document_id}#{i}", doc.document_id, chunks[i], vectors[i])
-                    for i in range(len(chunks))
-                ]
-            )
+        with self._lock:
+            for item in docs:
+                if item.document.document_id in self._docs:
+                    # Fail loud rather than silently append stale duplicate chunks that
+                    # would stay queryable alongside the new ones.
+                    raise ValueError(f"document already indexed: {item.document.document_id}")
+                self._index_one(item)
+
+    def _index_if_absent(self, docs: list[IngestedDocument]) -> None:
+        # Fetch-on-miss path: a concurrent double-fetch of the same CVE must index it
+        # exactly once, not raise. Skip any doc already present instead of failing loud.
+        with self._lock:
+            for item in docs:
+                if item.document.document_id not in self._docs:
+                    self._index_one(item)
+
+    def _index_one(self, item: IngestedDocument) -> None:
+        # Caller holds self._lock. Publish to self._docs LAST — after the chunks are
+        # upserted — so a concurrent reader never sees a doc id whose chunks are not yet
+        # queryable (which would be an OK with an empty answer and a wrong audit record).
+        doc = item.document
+        chunks = chunk(item.text)
+        vectors = self._embedder.embed(chunks)
+        self._store.upsert(
+            [
+                ChunkRecord(f"{doc.document_id}#{i}", doc.document_id, chunks[i], vectors[i])
+                for i in range(len(chunks))
+            ]
+        )
+        self._docs[doc.document_id] = doc
+
+    def _snapshot(self) -> list[tuple[str, ResearchDocument]]:
+        # Atomic copy of the id->doc pairs so the unlocked allowed/scope computation never
+        # iterates self._docs while _index_one mutates it ("dict changed size").
+        with self._lock:
+            return list(self._docs.items())
 
     def research_cve(self, cve_id: str, *, role: str) -> ResearchResult:
         rid = uuid.uuid4().hex
@@ -92,20 +120,44 @@ class ResearchService:
 
         # Authorize before retrieval: the scope is what the role may see, intersected
         # with the requested CVE. A document outside this set is never queried.
-        allowed = {did for did, doc in self._docs.items() if self._authorize(role, doc)}
+        allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
         scope = allowed & {cve_id}
 
         # Role-level deny: the caller may retrieve nothing at all.
         if not allowed:
-            self._emit_terminal(rid, analyst_id, objective, now, Outcome.DENIED)
+            self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
             return ResearchResult(Outcome.DENIED, "", [], rid)
 
         # The CVE is not retrievable in the caller's scope — absent from the corpus,
         # or present but outside the caller's authorization. Both yield the same
         # response (no existence oracle) and the store is never queried empty-scoped.
         if not scope:
-            self._emit_terminal(rid, analyst_id, objective, now, Outcome.NOT_FOUND)
-            return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
+            # Fetch-on-miss (opt-in). We are already past the role-level DENIED gate, so
+            # only an authorized caller ever reaches a fetch (authz-first). The
+            # ``cve_id not in self._docs`` guard means a present-but-unauthorized CVE is
+            # never fetched — it stays indistinguishable from absent.
+            if self._fetch_missing is not None and cve_id not in self._docs:
+                try:
+                    fetched = self._fetch_missing(cve_id)
+                except CveNotFound:
+                    self._emit_terminal(
+                        rid, analyst_id, objective, now, "not_found: live fetch returned no record"
+                    )
+                    return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
+                except CveUnavailable:
+                    self._emit_terminal(
+                        rid, analyst_id, objective, now, "fetch_error: NVD unavailable"
+                    )
+                    return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+                self._index_if_absent(fetched)
+                allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
+                scope = allowed & {cve_id}
+
+            if not scope:
+                self._emit_terminal(
+                    rid, analyst_id, objective, now, "not_found: no corpus retrieved"
+                )
+                return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
 
         hits = self._store.query(
             self._embedder.embed([cve_id])[0],
@@ -149,7 +201,7 @@ class ResearchService:
         analyst_id: str,
         objective: str,
         now: datetime,
-        outcome: Outcome,
+        conclusion: str,
     ) -> None:
         emit(
             ResearchRecord(
@@ -164,7 +216,7 @@ class ResearchService:
                 prompt_template_version="",
                 retrieved_doc_ids=[],
                 model_output="",
-                conclusion=f"{outcome.value}: no corpus retrieved",
+                conclusion=conclusion,
             ),
             self._audit_path,
         )
