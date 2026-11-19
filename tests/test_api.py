@@ -313,6 +313,25 @@ def test_deps_deprecated_technique_is_404(tmp_path, monkeypatch):
         get_settings.cache_clear()
 
 
+def test_deps_kev_entry_is_searchable(tmp_path, monkeypatch):
+    # Drive the real (non-overridden) get_service: the packaged CISA KEV fixture must be
+    # indexed at startup so a KEV CVE surfaces through the live /research/search wiring.
+    monkeypatch.setenv("SAIR_AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+    get_service.cache_clear()
+    try:
+        resp = client.post(
+            "/research/search",
+            json={"query": "CVE-2021-44228"},
+            headers={"X-Role": "research_analyst"},
+        )
+        assert resp.status_code == 200
+        assert any(r["document_id"] == "KEV-CVE-2021-44228" for r in resp.json()["results"])
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
+
+
 # --- POST /research/search (Phase-2 search endpoint slice) ---
 
 

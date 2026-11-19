@@ -4,7 +4,7 @@ from importlib.resources import files
 import pytest
 
 from secure_ai_research.audit.record import read_records
-from secure_ai_research.ingestion import nvd
+from secure_ai_research.ingestion import kev, nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
@@ -427,3 +427,33 @@ def test_search_dedups_to_best_passage_per_document(tmp_path):
     res = svc.search("widget", role="research_analyst", limit=5)
     assert res.outcome is Outcome.OK
     assert [c.document_id for c in res.citations] == ["CVE-2099-0001"]  # one entry despite chunks
+
+
+# --- KEV coexistence (Phase-2 KEV loader slice) ---
+
+
+def test_kev_does_not_shadow_cve_route(tmp_path):
+    # A KEV doc for the same CVE as an NVD fixture doc coexists (namespaced id) and the
+    # CVE id-route still returns the NVD document, never the KEV one.
+    import json
+
+    audit = tmp_path / "a.jsonl"
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc.index(_docs())  # NVD CVE-2099-0001 / CVE-2099-0002
+    kev_raw = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "cveID": "CVE-2099-0001",
+                    "dateAdded": "2099-01-01",
+                    "vulnerabilityName": "dup",
+                    "shortDescription": "s",
+                    "requiredAction": "a",
+                }
+            ]
+        }
+    ).encode()
+    svc.index(kev.load(kev_raw))  # must NOT raise (KEV id is KEV-CVE-2099-0001)
+    res = svc.research_cve("CVE-2099-0001", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert all(c.document_id == "CVE-2099-0001" for c in res.citations)  # never KEV-…

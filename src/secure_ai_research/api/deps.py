@@ -13,7 +13,7 @@ from functools import lru_cache
 from importlib.resources import files
 
 from secure_ai_research.config import get_settings
-from secure_ai_research.ingestion import attack, nvd
+from secure_ai_research.ingestion import attack, kev, nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
 from secure_ai_research.ingestion.source import CveUnavailable
@@ -68,4 +68,8 @@ def get_service() -> ResearchService:
         files("secure_ai_research.ingestion").joinpath("samples", "attack_sample.json").read_bytes()
     )
     service.index(attack.load(attack_raw))
+    kev_raw = (
+        files("secure_ai_research.ingestion").joinpath("samples", "kev_sample.json").read_bytes()
+    )
+    service.index(kev.load(kev_raw))
     return service
