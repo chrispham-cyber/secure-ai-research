@@ -28,7 +28,14 @@ def research_cve(
     x_role: str = Header(default=""),
     service: ResearchService = Depends(get_service),
 ) -> JSONResponse:
-    """Correlate a CVE against public sources, grounded in cited passages."""
+    """Correlate a CVE against public sources, grounded in cited passages.
+
+    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an
+    authentication control** — a client sets it freely (threat T1). It exists only
+    to exercise the authorization boundary; Phase 5 replaces it with verified OIDC
+    roles, downstream authz unchanged (see ``infrastructure/identity/roles.md``). Do
+    not expose this route on a real network until then.
+    """
     res = service.research_cve(cve_id, role=x_role)
     if res.outcome is Outcome.OK:
         return JSONResponse(

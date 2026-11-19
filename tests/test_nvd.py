@@ -82,6 +82,47 @@ def test_load_rejects_missing_english_description():
     assert "CVE-2099-0003" in str(exc.value)
 
 
+def test_load_rejects_non_date_published_naming_id():
+    feed = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2099-1234",
+                    "published": "not-a-date",
+                    "descriptions": [{"lang": "en", "value": "x"}],
+                }
+            }
+        ]
+    }
+    with pytest.raises(ValueError) as exc:
+        nvd.load(json.dumps(feed).encode())
+    assert "CVE-2099-1234" in str(exc.value)
+
+
+def test_load_rejects_missing_cve_key_naming_position():
+    feed = {"vulnerabilities": [{"not_cve": {}}]}
+    with pytest.raises(ValueError) as exc:
+        nvd.load(json.dumps(feed).encode())
+    assert "index 0" in str(exc.value)
+
+
+def test_load_rejects_english_description_missing_value_naming_id():
+    feed = {
+        "vulnerabilities": [
+            {
+                "cve": {
+                    "id": "CVE-2099-5678",
+                    "published": "2099-01-01T00:00:00.000",
+                    "descriptions": [{"lang": "en"}],
+                }
+            }
+        ]
+    }
+    with pytest.raises(ValueError) as exc:
+        nvd.load(json.dumps(feed).encode())
+    assert "CVE-2099-5678" in str(exc.value)
+
+
 def test_load_rejects_duplicate_ids():
     one = {
         "cve": {

@@ -14,7 +14,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from secure_ai_research.audit.record import ResearchRecord
 
-_CITATION = re.compile(r"\[([^\]]+)\]")
+# A citation is a document id in square brackets that the renderer attaches to a
+# claim. Matching only the id shape (not any `[...]`) keeps bracket tokens in the
+# passage body — buf[256], [CWE-79], reference markers — from being mistaken for
+# citations and silently dropping a legitimately cited line. Extend this pattern
+# when another id scheme (e.g. ATT&CK technique ids) flows through build_report.
+_CITATION = re.compile(r"\[(CVE-\d{4}-\d{4,})\]")
 
 
 def build_report(record: ResearchRecord) -> str:

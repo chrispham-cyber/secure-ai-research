@@ -44,3 +44,14 @@ def test_claim_citing_unknown_id_dropped():
 def test_no_cited_claims_states_no_findings():
     out = build_report(_record("", ["CVE-2099-0001"]))
     assert "No cited findings." in out
+
+
+def test_bracket_tokens_in_passage_body_do_not_drop_cited_claim():
+    # Brackets in the prose (buf[256], [CWE-79]) must not be mistaken for citations;
+    # only the id-shaped [CVE-...] the renderer attaches counts, so a legitimately
+    # cited claim with bracketed body text is kept, not silently dropped.
+    out = build_report(
+        _record("A heap overflow in buf[256] see [CWE-79]. [CVE-2099-0001]", ["CVE-2099-0001"])
+    )
+    assert "A heap overflow in buf[256] see [CWE-79]." in out
+    assert "No cited findings." not in out
