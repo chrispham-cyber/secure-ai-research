@@ -287,3 +287,32 @@ def test_attack_malformed_is_422(tmp_path, bad):
     _override_tech_service(tmp_path)
     resp = client.get(f"/research/attack/{bad}", headers={"X-Role": "research_analyst"})
     assert resp.status_code == 422
+
+
+def test_deps_indexes_attack_fixture(tmp_path, monkeypatch):
+    # Drive the real (non-overridden) get_service: the packaged ATT&CK fixture must be
+    # indexed at startup so a real technique answers through the live wiring.
+    monkeypatch.setenv("SAIR_AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+    get_service.cache_clear()
+    try:
+        resp = client.get("/research/attack/T1059", headers={"X-Role": "research_analyst"})
+        assert resp.status_code == 200
+        assert any(c["document_id"] == "T1059" for c in resp.json()["citations"])
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
+
+
+def test_deps_deprecated_technique_is_404(tmp_path, monkeypatch):
+    # T1064 (Scripting) is x_mitre_deprecated in current ATT&CK; the loader skips it, so it
+    # is absent from the corpus and answers 404 — the skip path exercised with real data.
+    monkeypatch.setenv("SAIR_AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+    get_service.cache_clear()
+    try:
+        resp = client.get("/research/attack/T1064", headers={"X-Role": "research_analyst"})
+        assert resp.status_code == 404
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
