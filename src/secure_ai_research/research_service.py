@@ -112,33 +112,40 @@ class ResearchService:
         with self._lock:
             return list(self._docs.items())
 
-    def research_cve(self, cve_id: str, *, role: str) -> ResearchResult:
+    def _research(
+        self,
+        doc_id: str,
+        *,
+        role: str,
+        objective: str,
+        fetch_missing: Callable[[str], list[IngestedDocument]] | None = None,
+    ) -> ResearchResult:
         rid = uuid.uuid4().hex
         analyst_id = role.strip() or "anonymous"
-        objective = f"Correlate {cve_id} against public sources"
         now = datetime.now(UTC)
 
         # Authorize before retrieval: the scope is what the role may see, intersected
-        # with the requested CVE. A document outside this set is never queried.
+        # with the requested document. A document outside this set is never queried.
         allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
-        scope = allowed & {cve_id}
+        scope = allowed & {doc_id}
 
         # Role-level deny: the caller may retrieve nothing at all.
         if not allowed:
             self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
             return ResearchResult(Outcome.DENIED, "", [], rid)
 
-        # The CVE is not retrievable in the caller's scope — absent from the corpus,
+        # The document is not retrievable in the caller's scope — absent from the corpus,
         # or present but outside the caller's authorization. Both yield the same
         # response (no existence oracle) and the store is never queried empty-scoped.
         if not scope:
-            # Fetch-on-miss (opt-in). We are already past the role-level DENIED gate, so
-            # only an authorized caller ever reaches a fetch (authz-first). The
-            # ``cve_id not in self._docs`` guard means a present-but-unauthorized CVE is
-            # never fetched — it stays indistinguishable from absent.
-            if self._fetch_missing is not None and cve_id not in self._docs:
+            # Fetch-on-miss (opt-in; only the CVE path passes a fetcher). We are already
+            # past the role-level DENIED gate, so only an authorized caller ever reaches a
+            # fetch (authz-first). The ``doc_id not in self._docs`` guard means a present-
+            # but-unauthorized document is never fetched — it stays indistinguishable from
+            # absent. A path that passes no fetcher (e.g. ATT&CK) simply skips this block.
+            if fetch_missing is not None and doc_id not in self._docs:
                 try:
-                    fetched = self._fetch_missing(cve_id)
+                    fetched = fetch_missing(doc_id)
                 except CveNotFound:
                     self._emit_terminal(
                         rid, analyst_id, objective, now, "not_found: live fetch returned no record"
@@ -166,7 +173,7 @@ class ResearchService:
                     return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
                 self._index_if_absent(fetched)
                 allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
-                scope = allowed & {cve_id}
+                scope = allowed & {doc_id}
 
             if not scope:
                 self._emit_terminal(
@@ -175,7 +182,7 @@ class ResearchService:
                 return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
 
         hits = self._store.query(
-            self._embedder.embed([cve_id])[0],
+            self._embedder.embed([doc_id])[0],
             allowed_document_ids=scope,
             limit=self._limit,
         )
@@ -209,6 +216,27 @@ class ResearchService:
         answer = build_report(record)
         emit(record, self._audit_path)
         return ResearchResult(Outcome.OK, answer, citations, rid)
+
+    def research_cve(self, cve_id: str, *, role: str) -> ResearchResult:
+        """Correlate a CVE against public sources (NVD), fetching on a miss if enabled."""
+        return self._research(
+            cve_id,
+            role=role,
+            objective=f"Correlate {cve_id} against public sources",
+            fetch_missing=self._fetch_missing,
+        )
+
+    def research_attack(self, technique_id: str, *, role: str) -> ResearchResult:
+        """Explain a MITRE ATT&CK technique from cited public sources.
+
+        Fixture-backed only: no fetcher is passed, so an un-indexed technique resolves to
+        NOT_FOUND and the CVE fetch path is never reached with a technique id.
+        """
+        return self._research(
+            technique_id,
+            role=role,
+            objective=f"Explain ATT&CK technique {technique_id} with cited public sources",
+        )
 
     def _emit_terminal(
         self,

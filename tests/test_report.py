@@ -58,7 +58,9 @@ def test_bracket_tokens_in_passage_body_do_not_drop_cited_claim():
 
 
 def test_technique_cited_line_survives():
-    rec = _record(retrieved_doc_ids=["T1059"], model_output="Adversaries abuse interpreters [T1059]")
+    rec = _record(
+        retrieved_doc_ids=["T1059"], model_output="Adversaries abuse interpreters [T1059]"
+    )
     assert "[T1059]" in build_report(rec)
 
 

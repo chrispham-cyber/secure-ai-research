@@ -268,3 +268,60 @@ def test_fetch_unexpected_exception_becomes_fetch_error(tmp_path):
 
     assert res.outcome is Outcome.FETCH_ERROR
     assert len(read_records(audit)) == 1
+
+
+# --- ATT&CK technique path (Phase-2 ATT&CK endpoint slice) ---
+
+
+def _technique_doc(tid="T1059") -> IngestedDocument:
+    doc = ResearchDocument(
+        document_id=tid,
+        source="MITRE ATT&CK",
+        document_type=DocumentType.TECHNIQUE,
+        classification=Classification.PUBLIC,
+        created_at=date(2017, 5, 31),
+        source_url=f"https://attack.mitre.org/techniques/{tid}/",  # type: ignore[arg-type]
+        integrity_hash="sha256:" + "0" * 64,
+    )
+    return IngestedDocument(doc, f"{tid}: adversaries abuse command and scripting interpreters")
+
+
+def _svc_tech(audit, *, fetch=None) -> ResearchService:
+    svc = ResearchService(
+        HashingEmbedder(), InMemoryVectorStore(), authorize, audit, fetch_missing=fetch
+    )
+    svc.index([_technique_doc("T1059")])
+    return svc
+
+
+def test_research_attack_returns_cited_answer(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    res = _svc_tech(audit).research_attack("T1059", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert "T1059" in res.answer
+    assert [c for c in res.citations if c.document_id == "T1059"]
+    recs = read_records(audit)
+    assert len(recs) == 1
+    assert recs[0].data_source_ids == ["MITRE ATT&CK"]
+
+
+def test_research_attack_denied(tmp_path):
+    res = _svc_tech(tmp_path / "a.jsonl").research_attack("T1059", role="")
+    assert res.outcome is Outcome.DENIED
+
+
+def test_research_attack_absent_is_not_found(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    res = _svc_tech(audit).research_attack("T9999", role="research_analyst")
+    assert res.outcome is Outcome.NOT_FOUND
+    assert len(read_records(audit)) == 1
+
+
+def test_research_attack_never_fetches(tmp_path):
+    # A CVE fetcher is wired, but the attack path must never call it, even on a miss.
+    spy = _FakeFetch(docs=[_one_doc("CVE-2099-7777")])
+    res = _svc_tech(tmp_path / "a.jsonl", fetch=spy).research_attack(
+        "T9999", role="research_analyst"
+    )
+    assert res.outcome is Outcome.NOT_FOUND
+    assert spy.calls == 0
