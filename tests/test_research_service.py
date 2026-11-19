@@ -244,3 +244,27 @@ def test_index_if_absent_is_idempotent(tmp_path):
 
     res = svc.research_cve("CVE-2099-7777", role="research_analyst")
     assert res.outcome is Outcome.OK
+
+
+def test_fetch_oserror_becomes_fetch_error(tmp_path):
+    # fetch_missing is arbitrary injected code: a filesystem/IO failure (e.g. an unreadable
+    # or unwritable cache file) must become FETCH_ERROR with exactly one audit record —
+    # never an unhandled 500 and never a live fetch that leaves no audit trail.
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=OSError("disk full"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert len(read_records(audit)) == 1
+
+
+def test_fetch_unexpected_exception_becomes_fetch_error(tmp_path):
+    # Any non-typed failure escaping the callable (e.g. http.client.HTTPException, which is
+    # not an OSError, or a plain bug) is contained the same way: the service guarantees the
+    # invariant rather than trusting the callable to raise only the two typed errors.
+    audit = tmp_path / "audit.jsonl"
+    fetch = _FakeFetch(exc=RuntimeError("boom"))
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert len(read_records(audit)) == 1

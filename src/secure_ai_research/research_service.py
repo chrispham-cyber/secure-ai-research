@@ -149,6 +149,21 @@ class ResearchService:
                         rid, analyst_id, objective, now, "fetch_error: NVD unavailable"
                     )
                     return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+                except Exception as exc:
+                    # Defense in depth: fetch_missing is arbitrary injected code. Any
+                    # failure other than the two typed ones (e.g. an OSError from the cache
+                    # file, or an http.client.HTTPException that is not an OSError) must
+                    # still become FETCH_ERROR with exactly one audit record — never an
+                    # unhandled 500, never a live fetch that leaves no audit trail. Only the
+                    # exception *type* is recorded, so a message payload cannot leak.
+                    self._emit_terminal(
+                        rid,
+                        analyst_id,
+                        objective,
+                        now,
+                        f"fetch_error: live fetch failed ({type(exc).__name__})",
+                    )
+                    return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
                 self._index_if_absent(fetched)
                 allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
                 scope = allowed & {cve_id}

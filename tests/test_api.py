@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from secure_ai_research.api.deps import get_service
 from secure_ai_research.api.main import app
+from secure_ai_research.audit.record import read_records
 from secure_ai_research.config import get_settings
 from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
@@ -180,6 +181,52 @@ def test_get_service_wires_fetch_when_enabled(monkeypatch):
     get_service.cache_clear()
     try:
         assert get_service()._fetch_missing is not None
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
+
+
+# --- fetch-on-miss cache-fault handling (Review Focus #5, via the real wired deps) ---
+
+
+def _enable_live_fetch(monkeypatch, tmp_path):
+    # Point the real (non-overridden) get_service at a live-fetch build with tmp cache +
+    # audit paths, then clear the caches so the next build reads this env.
+    monkeypatch.setenv("SAIR_ALLOW_LIVE_FETCH", "true")
+    monkeypatch.setenv("SAIR_NVD_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("SAIR_AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+    get_service.cache_clear()
+
+
+def test_corrupt_cache_content_is_503(tmp_path, monkeypatch):
+    # A cache *hit* on a file with an unparseable body: a hit is served without
+    # re-validation, so the deps closure re-parses it → CveUnavailable → 503 + one audit
+    # record. Hermetic: the hit means NVD is never contacted.
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "CVE-2099-7777.json").write_bytes(b"{ not valid json")
+    _enable_live_fetch(monkeypatch, tmp_path)
+    try:
+        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "upstream source unavailable"
+        assert len(read_records(tmp_path / "audit.jsonl")) == 1
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
+
+
+def test_unreadable_cache_entry_is_503_not_500(tmp_path, monkeypatch):
+    # A cache path that cannot be read as a file (here a directory) raises OSError from the
+    # cache layer, which escapes the deps closure's narrow try — the service backstop must
+    # still turn it into 503 + one audit record, never an unhandled 500 with no audit trail.
+    (tmp_path / "cache" / "CVE-2099-7777.json").mkdir(parents=True)
+    _enable_live_fetch(monkeypatch, tmp_path)
+    try:
+        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+        assert resp.status_code == 503
+        assert len(read_records(tmp_path / "audit.jsonl")) == 1
     finally:
         get_service.cache_clear()
         get_settings.cache_clear()
