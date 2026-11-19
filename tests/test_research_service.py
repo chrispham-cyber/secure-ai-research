@@ -6,10 +6,15 @@ import pytest
 from secure_ai_research.audit.record import read_records
 from secure_ai_research.ingestion import kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
-from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
+from secure_ai_research.ingestion.schema import (
+    Classification,
+    DocumentType,
+    ResearchDocument,
+    Sensitivity,
+)
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.research_service import Outcome, ResearchService
-from secure_ai_research.retrieval.authz import authorize
+from secure_ai_research.retrieval.authz import authorize, may_live_fetch
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
 from secure_ai_research.retrieval.ports import ChunkHit
 from secure_ai_research.retrieval.vectorstore import InMemoryVectorStore
@@ -24,6 +29,16 @@ def _svc(audit_path, store=None) -> ResearchService:
     svc = ResearchService(HashingEmbedder(), store or InMemoryVectorStore(), authorize, audit_path)
     svc.index(_docs())
     return svc
+
+
+def test_may_live_fetch_is_senior_only():
+    # Only a role with no present-but-hidden PUBLIC class may trigger opt-in live fetch-on-miss,
+    # or the fetch-timing existence oracle reopens (design §7.1). That set is senior_analyst today.
+    assert may_live_fetch("senior_analyst") is True
+    assert may_live_fetch(" senior_analyst ") is True  # stripped, like _research's analyst_id
+    assert may_live_fetch("research_analyst") is False
+    assert may_live_fetch("") is False
+    assert may_live_fetch("security_auditor") is False
 
 
 def test_permitted_role_gets_cited_answer(tmp_path):
@@ -135,12 +150,15 @@ def test_multiline_answer_round_trips_as_one_record(tmp_path):
 # --- fetch-on-miss (Phase-2 fetch-on-miss slice) ---
 
 
-def _one_doc(cve_id: str = "CVE-2099-7777") -> IngestedDocument:
+def _one_doc(
+    cve_id: str = "CVE-2099-7777", *, sensitivity: Sensitivity = Sensitivity.ROUTINE
+) -> IngestedDocument:
     doc = ResearchDocument(
         document_id=cve_id,
         source="NVD",
         document_type=DocumentType.VULNERABILITY,
         classification=Classification.PUBLIC,
+        sensitivity=sensitivity,
         created_at=date(2099, 1, 1),
         source_url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",  # type: ignore[arg-type]
         integrity_hash="sha256:" + "0" * 64,
@@ -174,7 +192,7 @@ def _svc_with_fetch(audit, fetch) -> ResearchService:
 def test_fetch_on_miss_returns_cited_answer(tmp_path):
     audit = tmp_path / "audit.jsonl"
     fetch = _FakeFetch(docs=[_one_doc("CVE-2099-7777")])
-    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="senior_analyst")
 
     assert res.outcome is Outcome.OK
     assert fetch.calls == 1
@@ -185,7 +203,7 @@ def test_fetch_on_miss_returns_cited_answer(tmp_path):
 def test_fetch_absent_returns_not_found(tmp_path):
     audit = tmp_path / "audit.jsonl"
     fetch = _FakeFetch(exc=CveNotFound("absent"))
-    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="senior_analyst")
 
     assert res.outcome is Outcome.NOT_FOUND
     assert res.citations == []
@@ -195,7 +213,7 @@ def test_fetch_absent_returns_not_found(tmp_path):
 def test_fetch_unavailable_returns_fetch_error(tmp_path):
     audit = tmp_path / "audit.jsonl"
     fetch = _FakeFetch(exc=CveUnavailable("nvd down"))
-    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="senior_analyst")
 
     assert res.outcome is Outcome.FETCH_ERROR
     assert len(read_records(audit)) == 1
@@ -222,11 +240,11 @@ def test_miss_without_fetch_missing_is_not_found(tmp_path):
 def test_fetch_records_name_the_fetch(tmp_path):
     absent_audit = tmp_path / "absent.jsonl"
     _svc_with_fetch(absent_audit, _FakeFetch(exc=CveNotFound("x"))).research_cve(
-        "CVE-2099-7777", role="research_analyst"
+        "CVE-2099-7777", role="senior_analyst"
     )
     error_audit = tmp_path / "error.jsonl"
     _svc_with_fetch(error_audit, _FakeFetch(exc=CveUnavailable("x"))).research_cve(
-        "CVE-2099-7777", role="research_analyst"
+        "CVE-2099-7777", role="senior_analyst"
     )
     never_audit = tmp_path / "never.jsonl"
     _svc(never_audit).research_cve("CVE-2099-7777", role="research_analyst")
@@ -253,7 +271,7 @@ def test_fetch_oserror_becomes_fetch_error(tmp_path):
     # never an unhandled 500 and never a live fetch that leaves no audit trail.
     audit = tmp_path / "audit.jsonl"
     fetch = _FakeFetch(exc=OSError("disk full"))
-    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="senior_analyst")
 
     assert res.outcome is Outcome.FETCH_ERROR
     assert len(read_records(audit)) == 1
@@ -265,10 +283,42 @@ def test_fetch_unexpected_exception_becomes_fetch_error(tmp_path):
     # invariant rather than trusting the callable to raise only the two typed errors.
     audit = tmp_path / "audit.jsonl"
     fetch = _FakeFetch(exc=RuntimeError("boom"))
-    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="research_analyst")
+    res = _svc_with_fetch(audit, fetch).research_cve("CVE-2099-7777", role="senior_analyst")
 
     assert res.outcome is Outcome.FETCH_ERROR
     assert len(read_records(audit)) == 1
+
+
+def test_live_fetch_is_senior_only_no_existence_oracle(tmp_path):
+    # Absent and present-but-RESTRICTED are indistinguishable to a non-senior role: identical
+    # response AND zero fetches (no timing/egress oracle). senior_analyst stays the eligible
+    # fetcher. Remove the may_live_fetch gate in _research and the absent request fetches
+    # (spy.calls == 1) — so this test proves the gate is load-bearing.
+    spy = _FakeFetch(docs=[_one_doc("CVE-2099-7777")])
+    svc = ResearchService(
+        HashingEmbedder(),
+        InMemoryVectorStore(),
+        authorize,
+        tmp_path / "a.jsonl",
+        fetch_missing=spy,
+    )
+    svc.index(_docs() + [_one_doc("CVE-2099-6001", sensitivity=Sensitivity.RESTRICTED)])
+
+    # research_analyst: a present-but-RESTRICTED id (in corpus, hidden) and a genuinely absent id
+    present_restricted = svc.research_cve("CVE-2099-6001", role="research_analyst")
+    absent = svc.research_cve("CVE-2099-7777", role="research_analyst")
+    assert present_restricted.outcome is Outcome.NOT_FOUND
+    assert absent.outcome is Outcome.NOT_FOUND
+    # response-level: identical observable fields (no response oracle)
+    assert present_restricted.answer == "" and not present_restricted.citations
+    assert absent.answer == "" and not absent.citations
+    # timing/egress-level: the analyst never fetched in EITHER case — the oracle is closed
+    assert spy.calls == 0
+    # senior is the eligible fetcher: an absent id fires exactly one fetch; a present RESTRICTED
+    # id stays retrievable (no NOT_FOUND) — so senior has no present-but-hidden class either.
+    assert svc.research_cve("CVE-2099-7777", role="senior_analyst").outcome is Outcome.OK
+    assert spy.calls == 1
+    assert svc.research_cve("CVE-2099-6001", role="senior_analyst").outcome is Outcome.OK
 
 
 # --- ATT&CK technique path (Phase-2 ATT&CK endpoint slice) ---

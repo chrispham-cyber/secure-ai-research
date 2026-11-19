@@ -126,20 +126,20 @@ def _override_fetch_service(tmp_path, fetch):
 
 def test_fetch_on_miss_is_200_with_citation(tmp_path):
     _override_fetch_service(tmp_path, _FakeFetch(docs=[_one_doc("CVE-2099-7777")]))
-    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "senior_analyst"})
     assert resp.status_code == 200
     assert any(c["document_id"] == "CVE-2099-7777" for c in resp.json()["citations"])
 
 
 def test_fetch_absent_is_404(tmp_path):
     _override_fetch_service(tmp_path, _FakeFetch(exc=CveNotFound("absent")))
-    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "senior_analyst"})
     assert resp.status_code == 404
 
 
 def test_fetch_unavailable_is_503(tmp_path):
     _override_fetch_service(tmp_path, _FakeFetch(exc=CveUnavailable("down")))
-    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+    resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "senior_analyst"})
     assert resp.status_code == 503
     assert resp.json()["detail"] == "upstream source unavailable"
 
@@ -203,7 +203,7 @@ def test_corrupt_cache_content_is_503(tmp_path, monkeypatch):
     (cache / "CVE-2099-7777.json").write_bytes(b"{ not valid json")
     _enable_live_fetch(monkeypatch, tmp_path)
     try:
-        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "senior_analyst"})
         assert resp.status_code == 503
         assert resp.json()["detail"] == "upstream source unavailable"
         assert len(read_records(tmp_path / "audit.jsonl")) == 1
@@ -219,7 +219,7 @@ def test_unreadable_cache_entry_is_503_not_500(tmp_path, monkeypatch):
     (tmp_path / "cache" / "CVE-2099-7777.json").mkdir(parents=True)
     _enable_live_fetch(monkeypatch, tmp_path)
     try:
-        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "research_analyst"})
+        resp = client.get("/research/cve/CVE-2099-7777", headers={"X-Role": "senior_analyst"})
         assert resp.status_code == 503
         assert len(read_records(tmp_path / "audit.jsonl")) == 1
     finally:

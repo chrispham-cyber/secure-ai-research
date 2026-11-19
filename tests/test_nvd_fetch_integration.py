@@ -45,7 +45,7 @@ def test_live_endpoint_fetches_real_cve(tmp_path, monkeypatch):
     get_service.cache_clear()
     try:
         resp = TestClient(app).get(
-            "/research/cve/CVE-2021-44228", headers={"X-Role": "research_analyst"}
+            "/research/cve/CVE-2021-44228", headers={"X-Role": "senior_analyst"}
         )
         # A network failure surfaces through the wired service as CveUnavailable →
         # FETCH_ERROR → 503 (not a bubbling exception), so skip on 503 rather than fail

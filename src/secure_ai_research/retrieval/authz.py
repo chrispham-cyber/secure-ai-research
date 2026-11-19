@@ -20,6 +20,16 @@ _ALLOWED_ROLES = frozenset({"research_analyst", "senior_analyst"})
 # Wider-scope roles that may retrieve RESTRICTED documents (roles.md: senior_analyst).
 _RESTRICTED_ROLES = frozenset({"senior_analyst"})
 
+# Opt-in live fetch-on-miss does network egress and WRITES (it indexes the fetched document),
+# and — absent a role gate — whether a fetch fires reveals to the caller whether a RESTRICTED
+# document is present (absent id → fetch; present-but-RESTRICTED → no fetch), a timing/egress
+# existence oracle. So live-fetch is a privileged capability: only a role for which authorize()
+# never withholds a PUBLIC document (no present-but-hidden class) may trigger it — for such a
+# role a miss can only mean genuinely-absent, so the fire-or-not signal carries no withheld
+# existence. That set is _RESTRICTED_ROLES today; widen it ONLY in lockstep with any new
+# sensitivity tier, or the oracle reopens.
+_FETCH_ROLES = _RESTRICTED_ROLES
+
 
 def authorize(role: str, doc: ResearchDocument) -> bool:
     """Return whether ``role`` may retrieve ``doc``.
@@ -37,3 +47,8 @@ def authorize(role: str, doc: ResearchDocument) -> bool:
     if doc.sensitivity == Sensitivity.RESTRICTED and role not in _RESTRICTED_ROLES:
         return False
     return True
+
+
+def may_live_fetch(role: str) -> bool:
+    """Whether ``role`` may trigger opt-in live fetch-on-miss (see ``_FETCH_ROLES``)."""
+    return role.strip() in _FETCH_ROLES

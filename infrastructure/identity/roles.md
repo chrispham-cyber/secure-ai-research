@@ -40,6 +40,24 @@ absent document (no response-level existence oracle). See the two-user informati
 disclosure test
 [`tests/test_access_control.py`](../../tests/test_access_control.py).
 
+## Live fetch-on-miss is a senior-only capability
+
+Opt-in live fetch-on-miss (`SAIR_ALLOW_LIVE_FETCH`, default **off**) lets the CVE id-route
+answer a CVE absent from the packaged corpus by fetching it from NVD. It is restricted to
+`senior_analyst`. Two reasons, one gate (`may_live_fetch` in
+[`retrieval/authz.py`](../../src/secure_ai_research/retrieval/authz.py)):
+
+- It does **network egress** and it **writes** the corpus (it indexes the fetched document),
+  so it is a privileged, side-effecting action, not a read.
+- Absent a role gate, *whether a fetch fires* would reveal whether a `RESTRICTED` document is
+  present: an absent id triggers a fetch, a present-but-`RESTRICTED` id does not — a
+  timing/egress existence oracle, even though the `NOT_FOUND` response itself is byte-identical.
+  Gating fetch to a role for which `authorize` never withholds a PUBLIC document (no
+  present-but-hidden class — today `senior_analyst`) collapses the two cases: for every other
+  role an absent id and a present-but-`RESTRICTED` id are identical in response **and** in
+  fetch behavior (both zero fetches). **Invariant:** widen the fetch-eligible set only in
+  lockstep with any new sensitivity tier, or the oracle reopens.
+
 ## A model never inherits the analyst's privileges
 
 When an analyst runs an analysis, the model and any agent tools operate under their **own

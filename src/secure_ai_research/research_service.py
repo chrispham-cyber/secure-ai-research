@@ -26,6 +26,7 @@ from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import ResearchDocument
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.reporting.report import build_report
+from secure_ai_research.retrieval.authz import may_live_fetch
 from secure_ai_research.retrieval.chunking import chunk
 from secure_ai_research.retrieval.ports import ChunkRecord, Embedder, VectorStore
 
@@ -138,12 +139,16 @@ class ResearchService:
         # or present but outside the caller's authorization. Both yield the same
         # response (no existence oracle) and the store is never queried empty-scoped.
         if not scope:
-            # Fetch-on-miss (opt-in; only the CVE path passes a fetcher). We are already
-            # past the role-level DENIED gate, so only an authorized caller ever reaches a
-            # fetch (authz-first). The ``doc_id not in self._docs`` guard means a present-
-            # but-unauthorized document is never fetched — it stays indistinguishable from
-            # absent. A path that passes no fetcher (e.g. ATT&CK) simply skips this block.
-            if fetch_missing is not None and doc_id not in self._docs:
+            # Fetch-on-miss (opt-in; only the CVE path passes a fetcher). We are already past
+            # the role-level DENIED gate, so only an authorized caller reaches here (authz-
+            # first). Fetch is further gated to ``may_live_fetch(role)``: only a role with no
+            # present-but-hidden PUBLIC class (senior_analyst) may fetch, so for every other
+            # role an absent id and a present-but-RESTRICTED id are identical — the same
+            # NOT_FOUND response AND the same zero fetches (no timing/egress existence oracle).
+            # The ``doc_id not in self._docs`` guard additionally keeps a present-but-
+            # unauthorized document from being fetched. A path with no fetcher (e.g. ATT&CK)
+            # skips this block.
+            if fetch_missing is not None and may_live_fetch(role) and doc_id not in self._docs:
                 try:
                     fetched = fetch_missing(doc_id)
                 except CveNotFound:
