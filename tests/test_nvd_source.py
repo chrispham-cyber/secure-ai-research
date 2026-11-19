@@ -1,8 +1,9 @@
 import urllib.error
+from importlib.resources import files
 
 import pytest
 
-from secure_ai_research.ingestion.nvd_source import NvdApiSource
+from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
 
 
 def test_fetch_builds_pinned_url_and_generic_ua():
@@ -68,3 +69,51 @@ def test_network_error_gives_clear_error():
 
     with pytest.raises(ValueError, match="CVE-2021-44228"):
         NvdApiSource(opener=opener).fetch_raw("CVE-2021-44228")
+
+
+VALID = files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json").read_bytes()
+
+
+class _Spy:
+    def __init__(self, raw):
+        self.raw = raw
+        self.calls = 0
+
+    def fetch_raw(self, cve_id):
+        self.calls += 1
+        return self.raw
+
+
+def test_miss_delegates_and_writes(tmp_path):
+    spy = _Spy(VALID)
+    out = CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert out == VALID and spy.calls == 1
+    assert (tmp_path / "CVE-2099-0001.json").read_bytes() == VALID
+
+
+def test_hit_serves_from_disk_without_inner(tmp_path):
+    (tmp_path / "CVE-2099-0001.json").write_bytes(VALID)
+    spy = _Spy(b"should-not-be-used")
+    out = CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert out == VALID and spy.calls == 0
+
+
+def test_empty_vulnerabilities_fails_loud_and_writes_nothing(tmp_path):
+    spy = _Spy(b'{"vulnerabilities": []}')
+    with pytest.raises(ValueError, match="no usable record"):
+        CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert not (tmp_path / "CVE-2099-0001.json").exists()
+
+
+def test_malformed_body_fails_loud_and_writes_nothing(tmp_path):
+    spy = _Spy(b"{ this is not json")
+    with pytest.raises(ValueError):
+        CachingCveSource(spy, tmp_path).fetch_raw("CVE-2099-0001")
+    assert not (tmp_path / "CVE-2099-0001.json").exists()
+
+
+def test_malformed_cve_id_rejected_before_path(tmp_path):
+    spy = _Spy(VALID)
+    with pytest.raises(ValueError):
+        CachingCveSource(spy, tmp_path).fetch_raw("../escape")
+    assert spy.calls == 0 and list(tmp_path.iterdir()) == []
