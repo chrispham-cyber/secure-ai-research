@@ -2,14 +2,13 @@ import pytest
 
 from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
-from secure_ai_research.ingestion import attack, kev, nvd, sigma
+from secure_ai_research.ingestion import attack, kev, sigma
 from secure_ai_research.reporting import report
 from secure_ai_research.retrieval import authz, chunking, embeddings, vectorstore
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
 STUB_CALLS = [
-    (nvd.load, (b"",), {}),
     (kev.load, (b"",), {}),
     (attack.load, (b"",), {}),
     (sigma.load, (b"",), {}),

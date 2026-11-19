@@ -1,0 +1,25 @@
+{
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2099-0001",
+        "published": "2099-01-15T00:00:00.000",
+        "descriptions": [
+          {"lang": "en", "value": "CVE-2099-0001 is a synthetic SQL injection in the example login form that lets an unauthenticated attacker read arbitrary rows from the accounts database. This record is fictional test data."},
+          {"lang": "es", "value": "Dato de prueba sintetico."}
+        ],
+        "references": [{"url": "https://example.test/advisory/0001"}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2099-0002",
+        "published": "2099-03-22T00:00:00.000",
+        "descriptions": [
+          {"lang": "en", "value": "CVE-2099-0002 is a synthetic path traversal in the example file-export endpoint allowing a low-privileged user to read files outside the intended directory. This record is fictional test data."}
+        ],
+        "references": []
+      }
+    }
+  ]
+}
