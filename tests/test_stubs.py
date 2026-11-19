@@ -2,13 +2,12 @@ import pytest
 
 from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
-from secure_ai_research.ingestion import attack, kev, sigma
+from secure_ai_research.ingestion import kev, sigma
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
 STUB_CALLS = [
     (kev.load, (b"",), {}),
-    (attack.load, (b"",), {}),
     (sigma.load, (b"",), {}),
     (metrics.score, ([], []), {}),
     (functions.search_cve, ("CVE-2026-0001",), {}),
