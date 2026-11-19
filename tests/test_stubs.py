@@ -4,7 +4,7 @@ from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
 from secure_ai_research.ingestion import attack, kev, sigma
 from secure_ai_research.reporting import report
-from secure_ai_research.retrieval import authz, embeddings, vectorstore
+from secure_ai_research.retrieval import authz, vectorstore
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
@@ -12,7 +12,6 @@ STUB_CALLS = [
     (kev.load, (b"",), {}),
     (attack.load, (b"",), {}),
     (sigma.load, (b"",), {}),
-    (embeddings.embed, ([],), {}),
     (vectorstore.upsert, ([],), {}),
     (vectorstore.retrieve, ("q",), {"role": "analyst"}),
     (authz.authorize, ("analyst", None), {}),
@@ -36,3 +35,11 @@ def test_all_stubs_raise_notimplemented(fn, args, kwargs):
 def test_all_stubs_have_docstrings():
     for fn, _, _ in STUB_CALLS:
         assert fn.__doc__ and fn.__doc__.strip(), f"{fn.__name__} missing docstring"
+
+
+def test_adapter_stubs_raise_on_construction():
+    from secure_ai_research.retrieval.embeddings import OllamaEmbedder
+
+    with pytest.raises(NotImplementedError) as exc:
+        OllamaEmbedder()
+    assert "ROADMAP Phase" in str(exc.value)
