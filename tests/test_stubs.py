@@ -3,7 +3,6 @@ import pytest
 from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
 from secure_ai_research.ingestion import attack, kev, sigma
-from secure_ai_research.reporting import report
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
@@ -12,7 +11,6 @@ STUB_CALLS = [
     (attack.load, (b"",), {}),
     (sigma.load, (b"",), {}),
     (metrics.score, ([], []), {}),
-    (report.build_report, (None,), {}),
     (functions.search_cve, ("CVE-2026-0001",), {}),
     (functions.search_attack, ("T1059",), {}),
     (functions.search_research, ("ransomware",), {}),
