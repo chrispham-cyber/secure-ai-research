@@ -41,3 +41,25 @@ def grounding(result: EvalResult) -> float:
         if ids and all(cid in retrieved for cid in ids):
             grounded += 1
     return 1.0 if claims == 0 else grounded / claims
+
+
+def citation_accuracy(result: EvalResult) -> float:
+    """Fraction of the answer's cited ids that are gold (relevant) ids.
+
+    With no citations, accuracy is ``1.0`` only when nothing was expected (``gold`` empty),
+    else ``0.0`` — an answer that should have cited but did not is not perfectly accurate.
+    """
+    cited = set(result.cited_ids)
+    gold = result.item.gold_document_ids
+    if not cited:
+        return 1.0 if not gold else 0.0
+    return len(cited & gold) / len(cited)
+
+
+def refusal_correct(result: EvalResult) -> bool:
+    """True iff the pipeline's outcome matched the item's expected outcome.
+
+    In posture there is no model to "refuse"; the deny / not-found / error decision is the
+    pipeline's, so a correct refusal is simply the expected ``Outcome`` being produced.
+    """
+    return result.outcome == result.item.expected_outcome
