@@ -70,6 +70,10 @@ class ResearchService:
     def index(self, docs: list[IngestedDocument]) -> None:
         for item in docs:
             doc = item.document
+            if doc.document_id in self._docs:
+                # Fail loud rather than silently append stale duplicate chunks that
+                # would stay queryable alongside the new ones.
+                raise ValueError(f"document already indexed: {doc.document_id}")
             self._docs[doc.document_id] = doc
             chunks = chunk(item.text)
             vectors = self._embedder.embed(chunks)
@@ -89,18 +93,23 @@ class ResearchService:
         # Authorize before retrieval: the scope is what the role may see, intersected
         # with the requested CVE. A document outside this set is never queried.
         allowed = {did for did, doc in self._docs.items() if self._authorize(role, doc)}
+        scope = allowed & {cve_id}
 
+        # Role-level deny: the caller may retrieve nothing at all.
         if not allowed:
             self._emit_terminal(rid, analyst_id, objective, now, Outcome.DENIED)
             return ResearchResult(Outcome.DENIED, "", [], rid)
 
-        if cve_id not in self._docs:
+        # The CVE is not retrievable in the caller's scope — absent from the corpus,
+        # or present but outside the caller's authorization. Both yield the same
+        # response (no existence oracle) and the store is never queried empty-scoped.
+        if not scope:
             self._emit_terminal(rid, analyst_id, objective, now, Outcome.NOT_FOUND)
             return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
 
         hits = self._store.query(
             self._embedder.embed([cve_id])[0],
-            allowed_document_ids=allowed & {cve_id},
+            allowed_document_ids=scope,
             limit=self._limit,
         )
 

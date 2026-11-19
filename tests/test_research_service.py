@@ -1,6 +1,8 @@
 from datetime import date
 from importlib.resources import files
 
+import pytest
+
 from secure_ai_research.audit.record import read_records
 from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
@@ -73,6 +75,36 @@ def test_absent_cve_is_not_found(tmp_path):
     r = read_records(audit)[0]
     assert r.retrieved_doc_ids == []
     assert r.document_hashes == []
+
+
+def test_present_but_unauthorized_cve_is_indistinguishable_from_absent(tmp_path):
+    # A role authorized for one document but not another must not learn the other
+    # exists: requesting the present-but-unauthorized doc returns NOT_FOUND (never
+    # OK with empty citations), and the store is never queried with an empty scope.
+    audit = tmp_path / "audit.jsonl"
+
+    def only_0001(role: str, doc) -> bool:
+        return doc.document_id == "CVE-2099-0001"
+
+    spy = _SpyStore()
+    svc = ResearchService(HashingEmbedder(), spy, only_0001, audit)
+    svc.index(_docs())  # indexes both CVE-2099-0001 and CVE-2099-0002
+
+    res = svc.research_cve("CVE-2099-0002", role="research_analyst")
+    assert res.outcome is Outcome.NOT_FOUND
+    assert res.citations == []
+    assert spy.query_calls == 0
+    assert read_records(audit)[0].retrieved_doc_ids == []
+
+
+def test_reindexing_duplicate_document_id_is_rejected(tmp_path):
+    # Re-indexing an already-indexed id must fail loud, not silently append stale
+    # duplicate chunks that stay queryable.
+    audit = tmp_path / "audit.jsonl"
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc.index(_docs())
+    with pytest.raises(ValueError, match="already indexed"):
+        svc.index(_docs())
 
 
 def test_multiline_answer_round_trips_as_one_record(tmp_path):
