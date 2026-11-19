@@ -63,8 +63,11 @@ files = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Default run is hermetic: integration tests (live services / network) are excluded
+# unless explicitly selected with `-m integration`. CI passes the same filter.
+addopts = ["-m", "not integration"]
 markers = [
-    "integration: requires live services (Postgres/MinIO/Ollama); skipped in CI",
+    "integration: requires live services (Postgres/MinIO/Ollama) or network (NVD); excluded by default and in CI",
 ]
 filterwarnings = [
     # Starlette's TestClient warns when httpx (not the very new httpx2) is the
