@@ -12,11 +12,15 @@ never a live fetch, and two runs of the benchmark produce identical results.
 from __future__ import annotations
 
 import re
+import tempfile
+from collections import Counter
 from datetime import date
 from importlib.resources import files
 from pathlib import Path
 
+from secure_ai_research.evaluation.benchmark_items import benchmark_items
 from secure_ai_research.evaluation.injection_corpus import malicious_corpus
+from secure_ai_research.evaluation.metrics import aggregate
 from secure_ai_research.evaluation.records import EvalItem, EvalResult
 from secure_ai_research.ingestion import attack, kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
@@ -128,3 +132,25 @@ def run_item(service: ResearchService, item: EvalItem) -> EvalResult:
 def run_benchmark(service: ResearchService, items: list[EvalItem]) -> list[EvalResult]:
     """Run every item in list order (deterministic) and return the results."""
     return [run_item(service, item) for item in items]
+
+
+def main() -> int:
+    """Run the full benchmark on a throwaway audit log and print the aggregate.
+
+    Reproduces the Week-14 metrics: ``python -m secure_ai_research.evaluation.benchmark``.
+    """
+    items = benchmark_items()
+    with tempfile.TemporaryDirectory() as tmp:
+        service = build_benchmark_service(Path(tmp) / "audit.jsonl")
+        results = run_benchmark(service, items)
+    agg = aggregate(results)
+    by_kind = dict(Counter(item.kind for item in items))
+    print(f"benchmark: {len(items)} items | by kind: {by_kind}")
+    print(f"aggregate: {agg}")
+    for key in ("grounding", "citation_accuracy", "refusal_accuracy", "n_total", "n_answered"):
+        print(f"  {key}={agg[key]}")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
