@@ -23,6 +23,15 @@ if TYPE_CHECKING:
 _CITATION = re.compile(r"\[(CVE-\d{4}-\d{4,}|T\d{4}(?:\.\d{3})?)\]")
 
 
+def citation_ids(text: str) -> list[str]:
+    """Return the CVE/ATT&CK citation ids in ``text`` (the single citation grammar).
+
+    Shared by ``build_report`` and the Phase-4 evaluator so a metric measures exactly the
+    citation semantics the report renders — one grammar, never a forked copy.
+    """
+    return _CITATION.findall(text)
+
+
 def build_report(record: ResearchRecord) -> str:
     """Render ``record`` into a cited report, dropping uncited claims.
 
@@ -36,7 +45,7 @@ def build_report(record: ResearchRecord) -> str:
         line = raw_line.strip()
         if not line:
             continue
-        cited = _CITATION.findall(line)
+        cited = citation_ids(line)
         if cited and all(cid in allowed for cid in cited):
             kept.append(line)
     body = "\n".join(kept) if kept else "No cited findings."

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from secure_ai_research.audit.record import ResearchRecord
-from secure_ai_research.reporting.report import build_report
+from secure_ai_research.reporting.report import build_report, citation_ids
 
 
 def _record(model_output: str, retrieved_doc_ids: list[str]) -> ResearchRecord:
@@ -16,6 +16,14 @@ def _record(model_output: str, retrieved_doc_ids: list[str]) -> ResearchRecord:
         retrieved_doc_ids=retrieved_doc_ids,
         model_output=model_output,
     )
+
+
+def test_citation_ids_matches_grammar():
+    assert citation_ids("rce [CVE-2021-44228] and [T1059.001] not buf[256] nor [CWE-79]") == [
+        "CVE-2021-44228",
+        "T1059.001",
+    ]
+    assert citation_ids("no citation here") == []
 
 
 def test_report_includes_cited_claim():
