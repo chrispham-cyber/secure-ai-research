@@ -12,9 +12,12 @@ answers never render document body, and authorization is unaffected by document 
 The property that a *model must not act on* injected instructions only becomes meaningful
 once generation exists (Phase 4); this corpus is the ready-made input for that eval.
 
-The ``INJ-`` ids are deliberately not CVE/ATT&CK-shaped, so these documents surface only
-through ``search`` (never the id-routes, whose ``scope = allowed & {doc_id}`` cannot match
-an ``INJ-`` id) — matching how a poisoned corpus document would actually be retrieved.
+The ``INJ-`` ids are deliberately not CVE/ATT&CK-shaped: the HTTP id-routes validate
+CVE/ATT&CK id shape with a ``Path`` pattern, so a real id-route request never names an
+``INJ-`` document, and the harness reaches these through ``search`` — matching how a
+poisoned corpus document would actually be retrieved. The id-shape gate lives at the route,
+not in the scope arithmetic: the ``research_cve`` service method would retrieve an ``INJ-``
+id passed to it directly.
 """
 
 from __future__ import annotations

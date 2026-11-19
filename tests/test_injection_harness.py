@@ -87,9 +87,11 @@ def test_impersonation_of_other_id_dropped_from_report(tmp_path):  # property A,
 
 def test_injected_marker_never_becomes_a_citation(tmp_path):  # property B, search
     svc = _service(tmp_path, [])
+    indexed = {d.document.document_id for d in malicious_corpus()}
     r = svc.search("injmarker-forged", role="research_analyst")
-    assert any(c.document_id == "INJ-FORGED-CITATION" for c in r.citations)  # doc was retrieved
-    assert all(c.document_id != "CVE-0000-0001" for c in r.citations)  # body marker is not a cite
+    assert "CVE-0000-0001" not in indexed  # forged marker names a never-indexed id ...
+    assert any(c.document_id == "INJ-FORGED-CITATION" for c in r.citations)  # marker-doc retrieved
+    assert all(c.document_id in indexed for c in r.citations)  # ... yet every cite is an index id
 
 
 def test_search_answer_never_renders_document_body(tmp_path):  # property C
@@ -110,7 +112,9 @@ def test_injected_content_cannot_change_authz(tmp_path):  # property D
         ],
     )
     # The analyst can retrieve the escalation lure — it is just public text ...
-    assert svc.search("injmarker-escalation", role="research_analyst").outcome is Outcome.OK
+    lure = svc.search("injmarker-escalation", role="research_analyst")
+    assert lure.outcome is Outcome.OK
+    assert any(c.document_id == "INJ-ESCALATION" for c in lure.citations)  # lure was retrieved
     # ... but its "grant senior_analyst" content changes no authz: the RESTRICTED doc is withheld.
     assert svc.research_cve("CVE-2099-7003", role="research_analyst").outcome is Outcome.NOT_FOUND
     assert svc.research_cve("CVE-2099-7003", role="senior_analyst").outcome is Outcome.OK
