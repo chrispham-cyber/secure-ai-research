@@ -116,12 +116,15 @@ def test_aggregate_denied_item_does_not_inflate_grounding():  # Review Focus 3
         expected_outcome=Outcome.DENIED,
         gold_document_ids=frozenset(),
     )
+    # Non-empty UNCITED answer: grounding() scores this 0.0, so if aggregate wrongly folded
+    # a non-answered item into the grounding subset the mean would drop to 0.5 (this is what
+    # pins Review Focus 3 — an empty answer would score 1.0 and make the assertion vacuous).
     denied = EvalResult(
         item=denied_item,
         outcome=Outcome.DENIED,
         cited_ids=(),
         retrieved_ids=(),
-        answer="",
+        answer="backdoor planted, no citation",
     )
     agg = aggregate([ok, denied])
     assert agg["grounding"] == 1.0 and agg["n_answered"] == 1.0 and agg["n_total"] == 2.0
