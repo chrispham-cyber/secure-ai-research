@@ -332,6 +332,26 @@ def test_deps_kev_entry_is_searchable(tmp_path, monkeypatch):
         get_settings.cache_clear()
 
 
+def test_deps_sigma_rule_is_searchable(tmp_path, monkeypatch):
+    # Drive the real (non-overridden) get_service: the packaged SigmaHQ fixture must be indexed
+    # at startup so a technique search surfaces the detection rule (SIGMA-… document) beside the
+    # ATT&CK document — the detection↔technique correlation this slice adds.
+    monkeypatch.setenv("SAIR_AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    get_settings.cache_clear()
+    get_service.cache_clear()
+    try:
+        resp = client.post(
+            "/research/search",
+            json={"query": "T1059"},
+            headers={"X-Role": "research_analyst"},
+        )
+        assert resp.status_code == 200
+        assert any(r["document_id"].startswith("SIGMA-") for r in resp.json()["results"])
+    finally:
+        get_service.cache_clear()
+        get_settings.cache_clear()
+
+
 # --- POST /research/search (Phase-2 search endpoint slice) ---
 
 

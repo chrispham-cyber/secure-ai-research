@@ -4,7 +4,7 @@ from importlib.resources import files
 import pytest
 
 from secure_ai_research.audit.record import read_records
-from secure_ai_research.ingestion import kev, nvd
+from secure_ai_research.ingestion import kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
@@ -457,3 +457,33 @@ def test_kev_does_not_shadow_cve_route(tmp_path):
     res = svc.research_cve("CVE-2099-0001", role="research_analyst")
     assert res.outcome is Outcome.OK
     assert all(c.document_id == "CVE-2099-0001" for c in res.citations)  # never KEV-…
+
+
+# --- Sigma coexistence (Phase-2 Sigma loader slice) ---
+
+
+def test_sigma_text_cve_does_not_leak_into_cve_route(tmp_path):
+    # A Sigma rule whose TEXT mentions a CVE (via a cve.* tag) is reachable by SEARCH but must
+    # never be returned by the CVE id-route: its id is SIGMA-…, outside research_cve's
+    # allowed & {cve_id} scope.
+    import json
+
+    audit = tmp_path / "a.jsonl"
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc.index(_docs())  # NVD CVE-2099-0001
+    sigma_raw = json.dumps(
+        [
+            {
+                "title": "detect thing",
+                "id": "dddddddd-0000-0000-0000-000000000001",
+                "status": "stable",
+                "date": "2099-01-01",
+                "tags": ["cve.2099-0001"],
+                "logsource": {"product": "windows"},
+            }
+        ]
+    ).encode()
+    svc.index(sigma.load(sigma_raw))  # text contains "CVE-2099-0001"
+    res = svc.research_cve("CVE-2099-0001", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert all(c.document_id == "CVE-2099-0001" for c in res.citations)  # never SIGMA-…
