@@ -1,27 +1,28 @@
-"""Authorization gate for retrieval — **stub** (ROADMAP Phase 2).
+"""Authorization gate for retrieval (ROADMAP Phase 2).
 
 Core rule: **authorization is applied before retrieval, never after generation.**
-The model never sees a document the caller's role may not access, so there is
-nothing to leak in the generated answer. Filtering after generation would be a
-control that has already failed — the protected text would already have reached
-the model.
+A document the caller's role may not access never enters the retrieval set, so
+there is nothing to leak in the answer. Filtering after generation would be a
+control that has already failed.
+
+Deny-by-default: only the two roles ``roles.md`` grants corpus retrieval
+(``research_analyst``, ``senior_analyst``) are allowed, and only for a document
+whose attributes also permit access (RBAC + ABAC). In this PUBLIC-only repo every
+document is PUBLIC; the same gate works unchanged when more lanes exist.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from secure_ai_research.ingestion.schema import Classification, ResearchDocument
 
-if TYPE_CHECKING:
-    from secure_ai_research.ingestion.schema import ResearchDocument
+_ALLOWED_ROLES = frozenset({"research_analyst", "senior_analyst"})
 
 
 def authorize(role: str, doc: ResearchDocument) -> bool:
-    """Return whether ``role`` may access ``doc`` (not yet implemented).
+    """Return whether ``role`` may retrieve ``doc``.
 
-    Called before a document enters the retrieval set: authorization is applied
-    before retrieval, never after generation.
+    True only if the (whitespace-stripped) role is on the retrieval allowlist
+    **and** the document's attributes permit access. Any other or empty role is
+    denied.
     """
-    raise NotImplementedError(
-        "Authorization gate — ROADMAP Phase 2 (weeks 5-8): authorization is applied "
-        "before retrieval, never after generation"
-    )
+    return role.strip() in _ALLOWED_ROLES and doc.classification == Classification.PUBLIC
