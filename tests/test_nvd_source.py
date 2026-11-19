@@ -1,4 +1,5 @@
 import urllib.error
+import urllib.request
 from importlib.resources import files
 
 import pytest
@@ -69,6 +70,38 @@ def test_network_error_gives_clear_error():
 
     with pytest.raises(ValueError, match="CVE-2021-44228"):
         NvdApiSource(opener=opener).fetch_raw("CVE-2021-44228")
+
+
+def test_api_key_is_unredirected_so_it_cannot_leak_on_a_redirect():
+    # Pinned-host invariant (design §4/§6/§9): a configured apiKey must never reach an
+    # attacker-chosen host. urllib copies normal headers onto a redirect's new request
+    # but NOT unredirected headers, so the key must live in unredirected_hdrs.
+    seen = {}
+
+    def opener(req, timeout):
+        seen["req"] = req
+        return b"{}"
+
+    NvdApiSource(api_key="SECRET-KEY", opener=opener).fetch_raw("CVE-2021-44228")
+    req = seen["req"]
+    assert req.unredirected_hdrs.get("Apikey") == "SECRET-KEY"
+    assert "Apikey" not in req.headers  # not a redirected header → never copied on a 3xx
+
+
+def test_pinned_host_refuses_to_follow_redirects():
+    # A 3xx off the pinned host must fail loud, not be followed (design §4/§9): urllib
+    # follows redirects unless redirect_request returns None, which makes it raise instead.
+    from secure_ai_research.ingestion.nvd_source import _NoRedirect
+
+    result = _NoRedirect().redirect_request(
+        urllib.request.Request("https://services.nvd.nist.gov/rest/json/cves/2.0"),
+        None,
+        302,
+        "Found",
+        {},
+        "https://evil.example.com/",
+    )
+    assert result is None
 
 
 VALID = files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json").read_bytes()
