@@ -48,7 +48,7 @@ infrastructure, and the real security primitives, so later phases build on solid
 
 - [x] Week 9 — Agent tool functions (`search_cve/attack/research`) with permission checks **outside** the LLM
 - [x] Week 10 — Role model + ABAC on retrieval; deny-by-default; two-user information-disclosure test
-- [ ] Week 11 — Prompt-injection test harness + synthetic malicious-document corpus (clearly labeled)
+- [x] Week 11 — Prompt-injection test harness + synthetic malicious-document corpus (clearly labeled)
 - [ ] Week 12 — Excessive-agency guards: read-only tools, argument validation, rate limits
 
 **Deliverables:** passing access-control and injection test suites; agent security notes.
