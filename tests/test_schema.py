@@ -33,3 +33,10 @@ def test_defaults():
     doc = ResearchDocument(**VALID)
     assert doc.verification_status is VerificationStatus.UNVERIFIED
     assert doc.reviewed_by is None
+
+
+def test_default_sensitivity_is_routine():
+    from secure_ai_research.ingestion.schema import Sensitivity
+
+    doc = ResearchDocument(**VALID)
+    assert doc.sensitivity is Sensitivity.ROUTINE

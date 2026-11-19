@@ -22,6 +22,18 @@ class Classification(StrEnum):
     PUBLIC = "PUBLIC"
 
 
+class Sensitivity(StrEnum):
+    """Retrieval sensitivity *within* the PUBLIC lane (an ABAC attribute, not a classification).
+
+    ROUTINE documents are retrievable by any role the retrieval allowlist grants;
+    RESTRICTED documents are retrievable only by the wider-scope ``senior_analyst``.
+    This is a privilege tier, not a new handling class — every document stays PUBLIC.
+    """
+
+    ROUTINE = "ROUTINE"
+    RESTRICTED = "RESTRICTED"
+
+
 class VerificationStatus(StrEnum):
     """Whether a human has verified the record."""
 
@@ -48,6 +60,7 @@ class ResearchDocument(BaseModel):
     source: str
     document_type: DocumentType
     classification: Classification
+    sensitivity: Sensitivity = Sensitivity.ROUTINE
     created_at: date
     source_url: AnyUrl
     integrity_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
