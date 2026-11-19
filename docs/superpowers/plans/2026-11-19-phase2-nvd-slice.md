@@ -41,15 +41,15 @@
 **Files:**
 - Create: `src/secure_ai_research/ingestion/ingested.py`
 - Modify: `src/secure_ai_research/ingestion/nvd.py`
-- Create: `src/secure_ai_research/ingestion/data/nvd_sample.json`
+- Create: `src/secure_ai_research/ingestion/samples/nvd_sample.json`
 - Modify: `pyproject.toml` (package-data)
 - Test: `tests/test_nvd.py`
 - Modify: `tests/test_stubs.py` (drop the now-real `nvd.load` row)
 
 **Interfaces:**
-- Produces: `IngestedDocument` (frozen dataclass: `document: ResearchDocument`, `text: str`); `nvd.load(raw: bytes) -> list[IngestedDocument]`; the packaged fixture readable via `importlib.resources.files("secure_ai_research.ingestion").joinpath("data", "nvd_sample.json")`.
+- Produces: `IngestedDocument` (frozen dataclass: `document: ResearchDocument`, `text: str`); `nvd.load(raw: bytes) -> list[IngestedDocument]`; the packaged fixture readable via `importlib.resources.files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json")`.
 
-- [ ] **Step 1: Commit the synthetic fixture** `src/secure_ai_research/ingestion/data/nvd_sample.json` (exact content — NVD 2.0 shape, clearly synthetic, descriptions contain the CVE id so retrieval is demonstrable):
+- [ ] **Step 1: Commit the synthetic fixture** `src/secure_ai_research/ingestion/samples/nvd_sample.json` (exact content — NVD 2.0 shape, clearly synthetic, descriptions contain the CVE id so retrieval is demonstrable):
 
 ```json
 {
@@ -83,7 +83,7 @@
 
 ```toml
 [tool.setuptools.package-data]
-"secure_ai_research.ingestion" = ["data/*.json"]
+"secure_ai_research.ingestion" = ["samples/*.json"]
 ```
 
 - [ ] **Step 3: Write the failing tests** in `tests/test_nvd.py`:

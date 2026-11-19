@@ -195,8 +195,9 @@ trail, per the audit README). **`build_report(record)`** keeps its Phase-1 signa
   `/research/attack` and `/research/search` stay **501**.
 
 ### 7.6 Synthetic fixture (packaged)
-`src/secure_ai_research/ingestion/data/nvd_sample.json` — **packaged** data (via
-`importlib.resources`, with `pyproject` package-data for `*.json`), not under `tests/`, so the
+`src/secure_ai_research/ingestion/samples/nvd_sample.json` — **packaged** data (via
+`importlib.resources`, with `pyproject` package-data for `samples/*.json`; `samples/` not
+`data/`, because `.gitignore` ignores any `data/` dir), not under `tests/`, so the
 installed app and the tests read the same corpus. Real NVD 2.0 shape
 (`{"vulnerabilities":[{"cve":{...}}]}`), 2–3 **clearly synthetic** records (`CVE-2099-0001` …)
 with plain-English descriptions written to make retrieval demonstrable.

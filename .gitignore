@@ -32,6 +32,9 @@ pgdata/
 miniodata/
 ollama-data/
 
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
+
 # OS / editor
 .DS_Store
 *.swp
