@@ -230,3 +230,60 @@ def test_unreadable_cache_entry_is_503_not_500(tmp_path, monkeypatch):
     finally:
         get_service.cache_clear()
         get_settings.cache_clear()
+
+
+# --- ATT&CK technique endpoint (Phase-2 ATT&CK endpoint slice) ---
+
+
+def _technique_doc(tid="T1059"):
+    doc = ResearchDocument(
+        document_id=tid,
+        source="MITRE ATT&CK",
+        document_type=DocumentType.TECHNIQUE,
+        classification=Classification.PUBLIC,
+        created_at=date(2017, 5, 31),
+        source_url=f"https://attack.mitre.org/techniques/{tid}/",  # type: ignore[arg-type]
+        integrity_hash="sha256:" + "0" * 64,
+    )
+    return IngestedDocument(doc, f"{tid}: adversaries abuse command and scripting interpreters")
+
+
+def _override_tech_service(tmp_path, tid="T1059"):
+    svc = ResearchService(
+        HashingEmbedder(), InMemoryVectorStore(), authorize, tmp_path / "audit.jsonl"
+    )
+    svc.index([_technique_doc(tid)])
+    app.dependency_overrides[get_service] = lambda: svc
+    return svc
+
+
+def test_attack_permitted_returns_cited_answer(tmp_path):
+    _override_tech_service(tmp_path, "T1059")
+    resp = client.get("/research/attack/T1059", headers={"X-Role": "research_analyst"})
+    assert resp.status_code == 200
+    assert any(c["document_id"] == "T1059" for c in resp.json()["citations"])
+    assert resp.json()["research_id"]
+
+
+def test_attack_subtechnique_200(tmp_path):
+    _override_tech_service(tmp_path, "T1059.001")
+    resp = client.get("/research/attack/T1059.001", headers={"X-Role": "research_analyst"})
+    assert resp.status_code == 200
+
+
+def test_attack_missing_role_denied(tmp_path):
+    _override_tech_service(tmp_path)
+    assert client.get("/research/attack/T1059").status_code == 403
+
+
+def test_attack_absent_is_404(tmp_path):
+    _override_tech_service(tmp_path)
+    resp = client.get("/research/attack/T9999", headers={"X-Role": "research_analyst"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("bad", ["TA0001", "T123", "t1059", "1059", "T1059.1"])
+def test_attack_malformed_is_422(tmp_path, bad):
+    _override_tech_service(tmp_path)
+    resp = client.get(f"/research/attack/{bad}", headers={"X-Role": "research_analyst"})
+    assert resp.status_code == 422
