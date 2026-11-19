@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from secure_ai_research.evaluation.records import EvalResult
 from secure_ai_research.reporting.report import citation_ids
+from secure_ai_research.research_service import Outcome
 
 
 def grounding(result: EvalResult) -> float:
@@ -63,3 +64,27 @@ def refusal_correct(result: EvalResult) -> bool:
     pipeline's, so a correct refusal is simply the expected ``Outcome`` being produced.
     """
     return result.outcome == result.item.expected_outcome
+
+
+def aggregate(results: list[EvalResult]) -> dict[str, float]:
+    """Mean of each metric over its applicable items, plus counts (every value a float).
+
+    ``grounding`` averages over **answered** cve/attack items, ``citation_accuracy`` over
+    answered cve/attack/search items, ``refusal_accuracy`` over **all** items. An empty
+    subset scores ``1.0`` (vacuous — no item failed). Iterates ``results`` in list order, so
+    the result is deterministic.
+    """
+    answered = [r for r in results if r.outcome == Outcome.OK]
+
+    def _mean(values: list[float]) -> float:
+        return sum(values) / len(values) if values else 1.0
+
+    return {
+        "grounding": _mean([grounding(r) for r in answered if r.item.kind in {"cve", "attack"}]),
+        "citation_accuracy": _mean(
+            [citation_accuracy(r) for r in answered if r.item.kind in {"cve", "attack", "search"}]
+        ),
+        "refusal_accuracy": _mean([float(refusal_correct(r)) for r in results]),
+        "n_total": float(len(results)),
+        "n_answered": float(len(answered)),
+    }

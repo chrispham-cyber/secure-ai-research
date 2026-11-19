@@ -1,6 +1,11 @@
 """Evaluation metrics (ROADMAP Phase 4, Week 13)."""
 
-from secure_ai_research.evaluation.metrics import citation_accuracy, grounding, refusal_correct
+from secure_ai_research.evaluation.metrics import (
+    aggregate,
+    citation_accuracy,
+    grounding,
+    refusal_correct,
+)
 from secure_ai_research.evaluation.records import EvalItem, EvalResult, ItemKind
 from secure_ai_research.research_service import Outcome
 
@@ -96,3 +101,39 @@ def test_refusal_correct_matches_expected_outcome():
     )
     served = EvalResult(item=item, outcome=Outcome.OK, cited_ids=(), retrieved_ids=(), answer="…")
     assert refusal_correct(denied) is True and refusal_correct(served) is False
+
+
+def test_aggregate_denied_item_does_not_inflate_grounding():  # Review Focus 3
+    ok = _ok(
+        "# Research report: q\n\nrce [CVE-2021-44228]\n\nSources: CVE-2021-44228",
+        ["CVE-2021-44228"],
+    )
+    denied_item = EvalItem(
+        id="d",
+        kind="cve",
+        query="q",
+        role="intern",
+        expected_outcome=Outcome.DENIED,
+        gold_document_ids=frozenset(),
+    )
+    denied = EvalResult(
+        item=denied_item,
+        outcome=Outcome.DENIED,
+        cited_ids=(),
+        retrieved_ids=(),
+        answer="",
+    )
+    agg = aggregate([ok, denied])
+    assert agg["grounding"] == 1.0 and agg["n_answered"] == 1.0 and agg["n_total"] == 2.0
+    assert agg["refusal_accuracy"] == 1.0  # ok→OK expected OK, denied→DENIED expected DENIED
+
+
+def test_aggregate_empty_is_defined_not_crash():  # Review Focus 4
+    agg = aggregate([])
+    assert agg == {
+        "grounding": 1.0,
+        "citation_accuracy": 1.0,
+        "refusal_accuracy": 1.0,
+        "n_total": 0.0,
+        "n_answered": 0.0,
+    }
