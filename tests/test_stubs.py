@@ -1,18 +1,14 @@
 import pytest
 
-from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
-# kev.load and sigma.load were retired from this list as the CISA KEV and Sigma
-# loaders were implemented (Phase-2 ingestion slices); metrics.score + the
-# agents.functions.* tool stubs remain (Phase 3 / Phase 5).
+# kev.load/sigma.load (Phase-2 ingestion) and the agents.functions.search_* tools
+# (Phase-3 Week-9 AgentToolset) were retired from this list as they were implemented;
+# metrics.score remains (Phase 4).
 STUB_CALLS = [
     (metrics.score, ([], []), {}),
-    (functions.search_cve, ("CVE-2026-0001",), {}),
-    (functions.search_attack, ("T1059",), {}),
-    (functions.search_research, ("ransomware",), {}),
 ]
 
 IDS = [f"{fn.__module__.split('.')[-1]}.{fn.__name__}" for fn, _, _ in STUB_CALLS]
