@@ -8,8 +8,9 @@ collides with an NVD/ATT&CK/KEV document and is reachable through corpus search
 rather than a single-document id route.
 
 Each rule's text carries **canonical correlation tokens** derived from its tags:
-an ``attack.tNNNN[.NNN]`` tag becomes ``TNNNN[.NNN]`` and a ``cve.YYYY.NNNN`` tag
-becomes ``CVE-YYYY-NNNN``, so a search for a technique or CVE id surfaces the
+an ``attack.tNNNN[.NNN]`` tag becomes ``TNNNN[.NNN]`` and a ``cve.YYYY-NNNN`` tag
+(the current SigmaHQ form; the older ``cve.YYYY.NNNN`` is also accepted) becomes
+``CVE-YYYY-NNNN``, so a search for a technique or CVE id surfaces the
 detection beside the ATT&CK / NVD / KEV documents.
 
 Input is a JSON **array** of rule objects — Sigma rules are authored in YAML, but
@@ -34,7 +35,8 @@ from secure_ai_research.ingestion.schema import Classification, DocumentType, Re
 _SKIP_STATUS = {"deprecated", "unsupported"}
 _REPO_URL = "https://github.com/SigmaHQ/sigma"
 _ATTACK_TAG = re.compile(r"attack\.t(\d{4})(\.\d{3})?", re.IGNORECASE)
-_CVE_TAG = re.compile(r"cve\.(\d{4})\.(\d+)", re.IGNORECASE)
+# cve.YYYY-NNNN (current SigmaHQ) or the older cve.YYYY.NNNN
+_CVE_TAG = re.compile(r"cve\.(\d{4})[.-](\d+)", re.IGNORECASE)
 
 
 def load(raw: bytes) -> list[IngestedDocument]:

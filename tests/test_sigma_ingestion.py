@@ -56,6 +56,13 @@ def test_cve_tag_becomes_cve_token():
     assert "CVE-2021-44228" in doc.text
 
 
+def test_cve_tag_accepts_dash_format():
+    # Current SigmaHQ taxonomy writes the CVE tag as cve.YYYY-NNNN (dash); the loader must
+    # still emit the canonical CVE-YYYY-NNNN token so a CVE search surfaces the detection.
+    [doc] = sigma.load(_rules(_rule(tags=["cve.2021-44228"])))
+    assert "CVE-2021-44228" in doc.text
+
+
 def test_date_accepts_slash_and_dash():
     [slash] = sigma.load(_rules(_rule(date="2021/12/14")))
     [dash] = sigma.load(_rules(_rule(date="2021-12-14")))
