@@ -2,12 +2,13 @@ import pytest
 
 from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
-from secure_ai_research.ingestion import kev, sigma
+from secure_ai_research.ingestion import sigma
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
+# kev.load was retired from this list when the CISA KEV loader was implemented
+# (Phase-2 KEV slice); sigma.load remains a stub until the Sigma slice.
 STUB_CALLS = [
-    (kev.load, (b"",), {}),
     (sigma.load, (b"",), {}),
     (metrics.score, ([], []), {}),
     (functions.search_cve, ("CVE-2026-0001",), {}),
