@@ -41,6 +41,20 @@ def test_may_live_fetch_is_senior_only():
     assert may_live_fetch("security_auditor") is False
 
 
+def test_fetch_roles_can_retrieve_every_sensitivity_tier():
+    # Binding invariant behind the existence-oracle closure: every fetch-eligible role must be
+    # authorized for a PUBLIC document at EVERY sensitivity tier (no present-but-hidden class).
+    # Add a tier a fetch-eligible role cannot see and this fails loudly — otherwise the
+    # fetch-timing oracle would silently reopen for that role (design §7.1, roles.md invariant).
+    from secure_ai_research.retrieval.authz import _FETCH_ROLES
+
+    assert _FETCH_ROLES  # non-empty, or the guard is vacuous
+    for role in _FETCH_ROLES:
+        for tier in Sensitivity:
+            doc = _one_doc("CVE-2099-0002", sensitivity=tier).document
+            assert authorize(role, doc) is True, (role, tier)
+
+
 def test_permitted_role_gets_cited_answer(tmp_path):
     audit = tmp_path / "audit.jsonl"
     res = _svc(audit).research_cve("CVE-2099-0001", role="research_analyst")

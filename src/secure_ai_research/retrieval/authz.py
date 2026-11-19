@@ -28,7 +28,12 @@ _RESTRICTED_ROLES = frozenset({"senior_analyst"})
 # role a miss can only mean genuinely-absent, so the fire-or-not signal carries no withheld
 # existence. That set is _RESTRICTED_ROLES today; widen it ONLY in lockstep with any new
 # sensitivity tier, or the oracle reopens.
-_FETCH_ROLES = _RESTRICTED_ROLES
+# Kept EXPLICIT (not an alias of _RESTRICTED_ROLES): extending the RESTRICTED-eligible roles
+# must not silently widen who may fetch. The binding invariant — every role here is authorize()d
+# for a PUBLIC document at EVERY Sensitivity tier (no present-but-hidden class) — is pinned by
+# test_fetch_roles_can_retrieve_every_sensitivity_tier, so adding a tier a fetch-eligible role
+# cannot see fails that test loudly instead of reopening the oracle.
+_FETCH_ROLES = frozenset({"senior_analyst"})
 
 
 def authorize(role: str, doc: ResearchDocument) -> bool:
