@@ -81,11 +81,6 @@ def test_cve_malformed_is_422(service):
     assert resp.status_code == 422
 
 
-def test_research_search_501():
-    resp = client.post("/research/search", json={"query": "ransomware"})
-    assert resp.status_code == 501
-
-
 # --- fetch-on-miss endpoint (Phase-2 fetch-on-miss slice) ---
 
 
@@ -316,3 +311,89 @@ def test_deps_deprecated_technique_is_404(tmp_path, monkeypatch):
     finally:
         get_service.cache_clear()
         get_settings.cache_clear()
+
+
+# --- POST /research/search (Phase-2 search endpoint slice) ---
+
+
+def _override_search_service(tmp_path):
+    audit = tmp_path / "audit.jsonl"
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc.index(
+        [
+            IngestedDocument(
+                ResearchDocument(
+                    document_id="CVE-2099-0001",
+                    source="NVD",
+                    document_type=DocumentType.VULNERABILITY,
+                    classification=Classification.PUBLIC,
+                    created_at=date(2099, 1, 1),
+                    source_url="https://nvd.nist.gov/vuln/detail/CVE-2099-0001",  # type: ignore[arg-type]
+                    integrity_hash="sha256:" + "0" * 64,
+                ),
+                "widget widget widget",
+            ),
+            IngestedDocument(
+                ResearchDocument(
+                    document_id="T1059",
+                    source="MITRE ATT&CK",
+                    document_type=DocumentType.TECHNIQUE,
+                    classification=Classification.PUBLIC,
+                    created_at=date(2017, 5, 31),
+                    source_url="https://attack.mitre.org/techniques/T1059/",  # type: ignore[arg-type]
+                    integrity_hash="sha256:" + "0" * 64,
+                ),
+                "widget alpha",
+            ),
+        ]
+    )
+    app.dependency_overrides[get_service] = lambda: svc
+    return audit
+
+
+def test_search_200_has_rank_not_score(tmp_path):
+    _override_search_service(tmp_path)
+    resp = client.post(
+        "/research/search", json={"query": "widget"}, headers={"X-Role": "research_analyst"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query"] == "widget"
+    assert body["count"] == len(body["results"])
+    assert body["research_id"]
+    first = body["results"][0]
+    assert first["rank"] == 1 and first["document_id"] == "CVE-2099-0001" and "passage" in first
+    assert "source_url" in first and "score" not in first
+
+
+def test_search_missing_role_denied(tmp_path):
+    _override_search_service(tmp_path)
+    assert client.post("/research/search", json={"query": "widget"}).status_code == 403
+
+
+def test_search_blank_query_422_no_audit(tmp_path):
+    audit = _override_search_service(tmp_path)
+    resp = client.post(
+        "/research/search", json={"query": "   "}, headers={"X-Role": "research_analyst"}
+    )
+    assert resp.status_code == 422
+    assert not audit.exists()  # validation rejected before the handler → zero audit records
+
+
+def test_search_oversized_query_422(tmp_path):
+    _override_search_service(tmp_path)
+    resp = client.post(
+        "/research/search", json={"query": "x" * 513}, headers={"X-Role": "research_analyst"}
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("bad_limit", [0, 21])
+def test_search_limit_out_of_range_422(tmp_path, bad_limit):
+    _override_search_service(tmp_path)
+    resp = client.post(
+        "/research/search",
+        json={"query": "widget", "limit": bad_limit},
+        headers={"X-Role": "research_analyst"},
+    )
+    assert resp.status_code == 422

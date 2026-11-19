@@ -5,23 +5,24 @@ pipeline and returns a cited answer, 403 when the caller's role may not retrieve
 when the CVE is not retrievable in the caller's scope (absent or unauthorized — the
 same response either way, no existence oracle), and 422 (by path validation) when the
 id is malformed. ``GET /research/attack/{technique_id}`` mirrors it for MITRE ATT&CK
-techniques (fixture-backed, no fetch — so no 503). ``/search`` remains 501 pending a
-later roadmap phase.
+techniques (fixture-backed, no fetch — so no 503). ``POST /research/search`` ranks cited
+passages across the whole authorized corpus (200 / 403, and 422 by body validation — no
+404/503, since an empty result is a valid 200).
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Path
+from fastapi import APIRouter, Depends, Header, Path
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, StringConstraints
 
 from secure_ai_research.api.deps import get_service
 from secure_ai_research.research_service import Outcome, ResearchService
 
 router = APIRouter(prefix="/research", tags=["research"])
-
-_NOT_IMPLEMENTED = "Not implemented — ROADMAP Phase 2 (weeks 5-8): evidence-grounded RAG"
 
 
 @router.get("/cve/{cve_id}")
@@ -102,7 +103,46 @@ def research_attack(
     )
 
 
+class SearchRequest(BaseModel):
+    """Body for ``POST /research/search``. A violation is a 422 raised by validation
+    before the handler runs — so a malformed request never calls the service and writes
+    no audit record."""
+
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+    limit: int = Field(default=5, ge=1, le=20)
+
+
 @router.post("/search")
-def research_search() -> dict[str, str]:
-    """Evidence-grounded semantic search over the corpus (planned — Phase 2)."""
-    raise HTTPException(status_code=501, detail=_NOT_IMPLEMENTED)
+def research_search(
+    req: SearchRequest,
+    x_role: str = Header(default=""),
+    service: ResearchService = Depends(get_service),
+) -> JSONResponse:
+    """Ranked, cited search over the authorized corpus.
+
+    Returns 200 with a ranked best-passage-per-document result list (empty results are a
+    valid 200, not 404) and 403 when the caller's role may retrieve nothing. Each result
+    carries a 1-based ``rank``; the internal cosine score is never surfaced.
+
+    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an
+    authentication control** — a client sets it freely (threat T1). It exists only to
+    exercise the authorization boundary; Phase 5 replaces it with verified OIDC roles,
+    downstream authz unchanged (see ``infrastructure/identity/roles.md``). Do not expose
+    this route on a real network until then.
+    """
+    res = service.search(req.query, role=x_role, limit=req.limit)
+    if res.outcome is Outcome.DENIED:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "role not authorized", "research_id": res.research_id},
+        )
+    results = [{"rank": i + 1, **asdict(c)} for i, c in enumerate(res.citations)]
+    return JSONResponse(
+        status_code=200,
+        content={
+            "query": req.query,
+            "count": len(results),
+            "results": results,
+            "research_id": res.research_id,
+        },
+    )
