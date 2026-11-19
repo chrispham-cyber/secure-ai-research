@@ -4,7 +4,7 @@ from secure_ai_research.agents import functions
 from secure_ai_research.evaluation import metrics
 from secure_ai_research.ingestion import attack, kev, sigma
 from secure_ai_research.reporting import report
-from secure_ai_research.retrieval import authz, chunking, embeddings, vectorstore
+from secure_ai_research.retrieval import authz, embeddings, vectorstore
 
 # (callable, positional args, keyword args) — each stub raises before touching
 # its arguments, so dummy values that satisfy the signature's arity are enough.
@@ -12,7 +12,6 @@ STUB_CALLS = [
     (kev.load, (b"",), {}),
     (attack.load, (b"",), {}),
     (sigma.load, (b"",), {}),
-    (chunking.chunk, ("",), {}),
     (embeddings.embed, ([],), {}),
     (vectorstore.upsert, ([],), {}),
     (vectorstore.retrieve, ("q",), {"role": "analyst"}),
