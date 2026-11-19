@@ -31,14 +31,14 @@ infrastructure, and the real security primitives, so later phases build on solid
 
 **Objective:** turn the stubs into a working, cited retrieval pipeline on public data.
 
-- [ ] Week 5 — Ingestion loaders: NVD, CISA KEV → `ResearchDocument` with content hashes
-- [ ] Week 5 — Object store (MinIO) for raw payloads; pgvector schema + migrations
-- [ ] Week 6 — Ingestion: MITRE ATT&CK, Sigma; chunking that preserves citation boundaries
-- [ ] Week 6 — Local embeddings via Ollama; upsert chunks+embeddings to pgvector
-- [ ] Week 7 — **Authorize-before-retrieve** gate; nearest-neighbor retrieval within scope
-- [ ] Week 7 — Model inference constrained to retrieved passages (local generation model)
-- [ ] Week 8 — Cited report rendering (drop uncited claims); wire `/research/*` endpoints live
-- [ ] Week 8 — Emit an audit record per analysis; end-to-end CVE-correlation demo
+- [x] Week 5 — Ingestion loaders: NVD, CISA KEV → `ResearchDocument` with content hashes
+- [ ] Week 5 — Object store (MinIO) for raw payloads; pgvector schema + migrations — _deferred: infra outside the in-posture offline/stdlib envelope_
+- [x] Week 6 — Ingestion: MITRE ATT&CK, Sigma; chunking that preserves citation boundaries
+- [ ] Week 6 — Local embeddings via Ollama; upsert chunks+embeddings to pgvector — _deferred: `Embedder`/`VectorStore` Protocol seams in place (HashingEmbedder + InMemoryVectorStore in posture)_
+- [x] Week 7 — **Authorize-before-retrieve** gate; nearest-neighbor retrieval within scope
+- [ ] Week 7 — Model inference constrained to retrieved passages (local generation model) — _deferred: retrieval-only in posture; no LLM synthesis_
+- [x] Week 8 — Cited report rendering (drop uncited claims); wire `/research/*` endpoints live
+- [x] Week 8 — Emit an audit record per analysis; end-to-end CVE-correlation demo — see `docs/phase2-correlation-demo.md`
 
 **Deliverables:** a working `/research/cve/{id}` answer with citations and an audit trail.
 
