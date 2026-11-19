@@ -98,6 +98,14 @@ def test_load_malformed_json_raises():
         attack.load(b"{ not valid json")
 
 
+@pytest.mark.parametrize("bad_id", ["TA0001", "T10", "T1059.1", "t1059", ""])
+def test_load_malformed_technique_id_raises(bad_id):
+    # Spec §7.1 / §4 anti-goal: a mis-shaped mitre-attack external_id must fail loud,
+    # not be silently indexed (the loader is fail-loud for every other malformation).
+    with pytest.raises(ValueError, match="malformed technique id"):
+        attack.load(_bundle(_ap(bad_id)))
+
+
 def test_integrity_hash_is_key_order_independent():
     a = {
         "type": "attack-pattern",

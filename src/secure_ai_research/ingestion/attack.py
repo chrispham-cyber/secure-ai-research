@@ -7,14 +7,16 @@ retrieval can prove provenance. Revoked and deprecated techniques are skipped:
 they are not current ATT&CK and must never answer a live query.
 
 Fail-loud: malformed JSON, an attack-pattern with no ``mitre-attack`` external id,
-a non-date ``created``, or a duplicate technique id raises ``ValueError`` naming
-the offending id — a research corpus is never silently built from bad input.
+an id that is not a valid ``T####``/``T####.###`` technique id, a non-date
+``created``, or a duplicate technique id raises ``ValueError`` naming the offending
+id — a research corpus is never silently built from bad input.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date
 from typing import Any
 
@@ -25,13 +27,16 @@ from secure_ai_research.ingestion.schema import (
     ResearchDocument,
 )
 
+_TECHNIQUE_ID = re.compile(r"T\d{4}(\.\d{3})?")
+
 
 def load(raw: bytes) -> list[IngestedDocument]:
     """Parse raw ATT&CK STIX bundle bytes into research documents.
 
     One :class:`IngestedDocument` per non-revoked, non-deprecated ``attack-pattern``.
     Raises ``ValueError`` (naming the offending STIX id) on malformed JSON, a missing
-    ``mitre-attack`` external id, a non-date ``created``, or a duplicate technique id.
+    ``mitre-attack`` external id, an id not matching ``T####``/``T####.###``, a non-date
+    ``created``, or a duplicate technique id.
     """
     bundle = json.loads(raw)  # json.JSONDecodeError is a ValueError subclass
     documents: list[IngestedDocument] = []
@@ -43,6 +48,8 @@ def load(raw: bytes) -> list[IngestedDocument]:
         if obj.get("revoked") is True or obj.get("x_mitre_deprecated") is True:
             continue
         technique_id = _external_id(obj)
+        if not _TECHNIQUE_ID.fullmatch(technique_id):
+            raise ValueError(f"malformed technique id {technique_id!r} for {obj.get('id')}")
         if technique_id in seen:
             raise ValueError(f"duplicate technique id in bundle: {technique_id}")
         seen.add(technique_id)
