@@ -238,6 +238,73 @@ class ResearchService:
             objective=f"Explain ATT&CK technique {technique_id} with cited public sources",
         )
 
+    def search(self, query: str, *, role: str, limit: int = 5) -> ResearchResult:
+        """Ranked, cited, audited free-text search over the whole authorized corpus.
+
+        A sibling of ``_research`` (which answers about a single id): here the free-text
+        query is embedded and the scope is the *whole* set the role may see, so results
+        span multiple documents. Deterministic (cosine), no fetch, no LLM. Empty results
+        are a valid OK (200 at the route), not NOT_FOUND. Exactly one audit record per call.
+        """
+        rid = uuid.uuid4().hex
+        analyst_id = role.strip() or "anonymous"
+        now = datetime.now(UTC)
+        objective = f'Search corpus for "{query}"'
+
+        # Authorize before retrieval: the scope is the whole set the role may see (not
+        # intersected with any id). A role that may see nothing retrieves nothing at all.
+        allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
+        if not allowed:
+            self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
+            return ResearchResult(Outcome.DENIED, "", [], rid)
+
+        # Relevance floor: the store returns a flat top-``limit`` that includes zero-score
+        # chunks (cosine is 0 exactly when the query shares no token). A search must drop
+        # those so "nothing matched" is a real empty result, not non-matching junk. This
+        # lives here, not in the shared store, so ``_research`` and the id-routes are
+        # unaffected.
+        hits = [
+            h
+            for h in self._store.query(
+                self._embedder.embed([query])[0], allowed_document_ids=allowed, limit=limit
+            )
+            if h.score > 0
+        ]
+
+        ordered_ids: list[str] = []
+        first_text: dict[str, str] = {}
+        for hit in hits:
+            if hit.document_id not in first_text:
+                ordered_ids.append(hit.document_id)
+                first_text[hit.document_id] = hit.text
+
+        citations = [
+            Citation(did, str(self._docs[did].source_url), first_text[did]) for did in ordered_ids
+        ]
+        answer = (
+            f'{len(ordered_ids)} document(s) matched "{query}".'
+            if ordered_ids
+            else f'No documents matched "{query}".'
+        )
+        emit(
+            ResearchRecord(
+                research_id=rid,
+                analyst_id=analyst_id,
+                timestamp=now,
+                objective=objective,
+                data_source_ids=sorted({self._docs[did].source for did in ordered_ids}),
+                document_hashes=[self._docs[did].integrity_hash for did in ordered_ids],
+                model_id="retrieval-only",
+                model_version="",
+                prompt_template_version="",
+                retrieved_doc_ids=ordered_ids,
+                model_output="\n".join(f"{h.text} [{h.document_id}]" for h in hits),
+                conclusion=f"retrieval-only: {len(ordered_ids)} document(s) from search",
+            ),
+            self._audit_path,
+        )
+        return ResearchResult(Outcome.OK, answer, citations, rid)
+
     def _emit_terminal(
         self,
         rid: str,

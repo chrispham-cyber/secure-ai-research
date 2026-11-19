@@ -11,6 +11,7 @@ from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.research_service import Outcome, ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
+from secure_ai_research.retrieval.ports import ChunkHit
 from secure_ai_research.retrieval.vectorstore import InMemoryVectorStore
 
 
@@ -325,3 +326,104 @@ def test_research_attack_never_fetches(tmp_path):
     )
     assert res.outcome is Outcome.NOT_FOUND
     assert spy.calls == 0
+
+
+# --- corpus search (Phase-2 search endpoint slice) ---
+
+
+def _mk(doc_id, source, source_url, text):
+    doc = ResearchDocument(
+        document_id=doc_id,
+        source=source,
+        document_type=DocumentType.VULNERABILITY,
+        classification=Classification.PUBLIC,
+        created_at=date(2099, 1, 1),
+        source_url=source_url,  # type: ignore[arg-type]
+        integrity_hash="sha256:" + "0" * 64,
+    )
+    return IngestedDocument(doc, text)
+
+
+def _search_svc(audit, authorize_fn=authorize) -> ResearchService:
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize_fn, audit)
+    svc.index(
+        [
+            _mk(
+                "CVE-2099-0001",
+                "NVD",
+                "https://nvd.nist.gov/vuln/detail/CVE-2099-0001",
+                "widget widget widget",
+            ),
+            _mk(
+                "T1059",
+                "MITRE ATT&CK",
+                "https://attack.mitre.org/techniques/T1059/",
+                "widget alpha",
+            ),
+        ]
+    )
+    return svc
+
+
+class _ZeroScoreStore(InMemoryVectorStore):
+    def query(self, embedding, *, allowed_document_ids, limit):
+        return [ChunkHit(did, "irrelevant", 0.0) for did in sorted(allowed_document_ids)][:limit]
+
+
+def test_search_ranks_across_sources(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    res = _search_svc(audit).search("widget", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert [c.document_id for c in res.citations] == ["CVE-2099-0001", "T1059"]  # 3×widget first
+    assert res.citations[0].source_url == "https://nvd.nist.gov/vuln/detail/CVE-2099-0001"
+    recs = read_records(audit)
+    assert len(recs) == 1
+    assert recs[0].retrieved_doc_ids == ["CVE-2099-0001", "T1059"]
+    assert recs[0].data_source_ids == ["MITRE ATT&CK", "NVD"]  # sorted
+
+
+def test_search_excludes_unauthorized_documents(tmp_path):
+    def only_cve(role, doc):
+        return doc.document_id.startswith("CVE-")
+
+    res = _search_svc(tmp_path / "a.jsonl", only_cve).search("widget", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert [c.document_id for c in res.citations] == ["CVE-2099-0001"]  # T1059 authorized out
+
+
+def test_search_denied_role_never_queries_store(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    spy = _SpyStore()
+    svc = ResearchService(HashingEmbedder(), spy, authorize, audit)
+    svc.index(
+        [_mk("CVE-2099-0001", "NVD", "https://nvd.nist.gov/vuln/detail/CVE-2099-0001", "widget")]
+    )
+    res = svc.search("widget", role="")
+    assert res.outcome is Outcome.DENIED
+    assert res.citations == []
+    assert spy.query_calls == 0
+    assert read_records(audit)[0].retrieved_doc_ids == []
+
+
+def test_search_no_match_is_ok_empty(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    svc = ResearchService(HashingEmbedder(), _ZeroScoreStore(), authorize, audit)
+    svc.index(
+        [_mk("CVE-2099-0001", "NVD", "https://nvd.nist.gov/vuln/detail/CVE-2099-0001", "widget")]
+    )
+    res = svc.search("anything", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert res.citations == []
+    recs = read_records(audit)
+    assert len(recs) == 1
+    assert recs[0].retrieved_doc_ids == []
+
+
+def test_search_dedups_to_best_passage_per_document(tmp_path):
+    audit = tmp_path / "a.jsonl"
+    text = " ".join(f"widget word{i}" for i in range(300))  # widget in every chunk, >800 chars
+    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc.index([_mk("CVE-2099-0001", "NVD", "https://nvd.nist.gov/vuln/detail/CVE-2099-0001", text)])
+    res = svc.search("widget", role="research_analyst", limit=5)
+    assert res.outcome is Outcome.OK
+    assert [c.document_id for c in res.citations] == ["CVE-2099-0001"]  # one entry despite chunks
