@@ -35,3 +35,13 @@ def test_settings_nvd_defaults(monkeypatch):
 def test_settings_nvd_api_key_from_env(monkeypatch):
     monkeypatch.setenv("SAIR_NVD_API_KEY", "env-key")
     assert Settings().nvd_api_key == "env-key"
+
+
+def test_settings_allow_live_fetch_default_false(monkeypatch):
+    monkeypatch.delenv("SAIR_ALLOW_LIVE_FETCH", raising=False)
+    assert Settings().allow_live_fetch is False
+
+
+def test_settings_allow_live_fetch_from_env(monkeypatch):
+    monkeypatch.setenv("SAIR_ALLOW_LIVE_FETCH", "true")
+    assert Settings().allow_live_fetch is True
