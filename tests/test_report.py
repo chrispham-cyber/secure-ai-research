@@ -55,3 +55,28 @@ def test_bracket_tokens_in_passage_body_do_not_drop_cited_claim():
     )
     assert "A heap overflow in buf[256] see [CWE-79]." in out
     assert "No cited findings." not in out
+
+
+def test_technique_cited_line_survives():
+    rec = _record(retrieved_doc_ids=["T1059"], model_output="Adversaries abuse interpreters [T1059]")
+    assert "[T1059]" in build_report(rec)
+
+
+def test_subtechnique_cited_line_survives():
+    rec = _record(retrieved_doc_ids=["T1059.001"], model_output="PowerShell abuse [T1059.001]")
+    assert "[T1059.001]" in build_report(rec)
+
+
+def test_markdown_brackets_not_citations():
+    # A tactic id, a short id, and a markdown link are NOT citations; the line still
+    # survives on its real [T1566] citation and is not dropped by the stray brackets.
+    rec = _record(
+        retrieved_doc_ids=["T1566"],
+        model_output="See [Phishing](https://x) and tactic [TA0001] and [T12]: phishing [T1566]",
+    )
+    assert "[T1566]" in build_report(rec)
+
+
+def test_uncited_technique_line_dropped():
+    rec = _record(retrieved_doc_ids=["T1059"], model_output="Claim citing [T9999]")
+    assert "No cited findings." in build_report(rec)

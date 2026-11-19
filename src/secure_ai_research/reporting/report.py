@@ -16,10 +16,11 @@ if TYPE_CHECKING:
 
 # A citation is a document id in square brackets that the renderer attaches to a
 # claim. Matching only the id shape (not any `[...]`) keeps bracket tokens in the
-# passage body — buf[256], [CWE-79], reference markers — from being mistaken for
-# citations and silently dropping a legitimately cited line. Extend this pattern
-# when another id scheme (e.g. ATT&CK technique ids) flows through build_report.
-_CITATION = re.compile(r"\[(CVE-\d{4}-\d{4,})\]")
+# passage body — buf[256], [CWE-79], markdown links like [Phishing](url), tactic
+# ids like [TA0001] — from being mistaken for citations and silently dropping a
+# legitimately cited line. Two id schemes flow through build_report: NVD CVE ids
+# and MITRE ATT&CK technique ids (T#### and sub-techniques T####.###).
+_CITATION = re.compile(r"\[(CVE-\d{4}-\d{4,}|T\d{4}(?:\.\d{3})?)\]")
 
 
 def build_report(record: ResearchRecord) -> str:
