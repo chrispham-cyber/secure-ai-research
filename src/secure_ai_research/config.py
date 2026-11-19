@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     model_registry_path: Path = Path("infrastructure/model-runtime/model-registry.json")
     audit_log_path: Path = Path("audit/research-records.jsonl")
 
+    # NVD fetch (opt-in). Defaults keep the platform offline — nothing auto-fetches;
+    # the base URL is a pinned constant in nvd_source.py, not a setting.
+    nvd_api_key: str | None = None
+    nvd_cache_dir: Path = Path("data/nvd-cache")
+    nvd_fetch_timeout: float = 30.0
+
     # This repository handles public/synthetic data only. The classification is
     # pinned to PUBLIC on purpose; an LLM never decides a document's class.
     data_classification: Literal["PUBLIC"] = "PUBLIC"
