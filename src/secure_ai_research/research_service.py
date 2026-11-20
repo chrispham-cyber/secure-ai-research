@@ -13,6 +13,7 @@ request still emits an audit record, but one carrying no corpus metadata.
 
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from collections.abc import Callable
@@ -22,6 +23,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from secure_ai_research.audit.record import ResearchRecord, emit
+from secure_ai_research.audit.signing import DEV_AUDIT_KEY
+from secure_ai_research.crypto.ports import Cipher
 from secure_ai_research.generation.join import JoinGenerator
 from secure_ai_research.generation.ports import Generator, GeneratorError
 from secure_ai_research.ingestion.ingested import IngestedDocument
@@ -91,6 +94,8 @@ class ResearchService:
         fetch_missing: Callable[[str], list[IngestedDocument]] | None = None,
         generator: Generator | None = None,
         object_store: ObjectStore | None = None,
+        audit_key: str = DEV_AUDIT_KEY,
+        audit_cipher: Cipher | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -98,6 +103,10 @@ class ResearchService:
         self._audit_path = audit_path
         self._limit = limit
         self._fetch_missing = fetch_missing
+        # Signing key + optional at-rest cipher for the audit chain. Default dev key keeps the
+        # offline suite self-verifying; a prod deployment injects a strong key via deps/startup.
+        self._audit_key = audit_key
+        self._audit_cipher = audit_cipher
         # Default = JoinGenerator: output byte-identical to the pre-seam id-route, so the
         # deterministic suite and the Phase-4 1.0 gate are unchanged with no real generator.
         self._generator = generator or JoinGenerator()
@@ -362,7 +371,7 @@ class ResearchService:
             did: [hit.text for hit in hits if hit.document_id == did] for did in ordered_ids
         }
         answer = build_report(record, passages_by_id)
-        emit(record, self._audit_path)
+        emit(record, self._audit_path, key=self._audit_key, cipher=self._audit_cipher)
         return ResearchResult(Outcome.OK, answer, citations, rid)
 
     def research_cve(self, cve_id: str, *, role: str) -> ResearchResult:
@@ -476,6 +485,8 @@ class ResearchService:
                 conclusion=f"retrieval-only: {len(r.ordered_ids)} document(s) from search",
             ),
             self._audit_path,
+            key=self._audit_key,
+            cipher=self._audit_cipher,
         )
         return ResearchResult(Outcome.OK, answer, r.citations, rid)
 
@@ -545,7 +556,7 @@ class ResearchService:
                 conclusion="retrieval-only: no documents matched",
             )
             answer = build_report(record)
-            emit(record, self._audit_path)
+            emit(record, self._audit_path, key=self._audit_key, cipher=self._audit_cipher)
             return ResearchResult(Outcome.OK, answer, [], rid)
 
         # Synthesis seam (mirrors _research). The question itself is the generator prompt.
@@ -602,7 +613,7 @@ class ResearchService:
             did: [hit.text for hit in r.hits if hit.document_id == did] for did in r.ordered_ids
         }
         answer = build_report(record, passages_by_id)
-        emit(record, self._audit_path)
+        emit(record, self._audit_path, key=self._audit_key, cipher=self._audit_cipher)
         return ResearchResult(Outcome.OK, answer, r.citations, rid)
 
     def _emit_terminal(
@@ -613,20 +624,26 @@ class ResearchService:
         now: datetime,
         conclusion: str,
     ) -> None:
-        emit(
-            ResearchRecord(
-                research_id=rid,
-                analyst_id=analyst_id,
-                timestamp=now,
-                objective=objective,
-                data_source_ids=[],
-                document_hashes=[],
-                model_id="retrieval-only",
-                model_version="",
-                prompt_template_version="",
-                retrieved_doc_ids=[],
-                model_output="",
-                conclusion=conclusion,
-            ),
-            self._audit_path,
+        record = ResearchRecord(
+            research_id=rid,
+            analyst_id=analyst_id,
+            timestamp=now,
+            objective=objective,
+            data_source_ids=[],
+            document_hashes=[],
+            model_id="retrieval-only",
+            model_version="",
+            prompt_template_version="",
+            retrieved_doc_ids=[],
+            model_output="",
+            conclusion=conclusion,
         )
+        try:
+            emit(record, self._audit_path, key=self._audit_key, cipher=self._audit_cipher)
+        except Exception as exc:
+            # Terminal (DENIED/NOT_FOUND/FETCH_ERROR) audit path: a second exception here would
+            # surface as an unhandled 500 on a request we have already decided to fail. Log the
+            # failure type only (never record content) and let the terminal result stand.
+            logging.getLogger("secure_ai_research.audit").error(
+                "terminal audit emit failed: %s", type(exc).__name__
+            )
