@@ -45,3 +45,23 @@ def test_report_marks_fail_when_a_check_fails():
 def test_report_is_deterministic_given_a_fixed_timestamp():  # Review Focus 3
     args = (evaluate_thresholds(_BASELINE), _BY_KIND, 51, 30, "2026-11-19")
     assert render_report(*args) == render_report(*args)
+
+
+def test_report_discloses_scripted_model_scope():  # Review Focus 1
+    from secure_ai_research.evaluation.thresholds import (
+        MODEL_BEHAVIOR_THRESHOLDS,
+        evaluate_thresholds,
+    )
+
+    clean = {
+        "raw_hallucination_rate": 0.0,
+        "false_refusal_rate": 0.0,
+        "injection_following_rate": 0.0,
+    }
+    mc = evaluate_thresholds(clean, MODEL_BEHAVIOR_THRESHOLDS)
+    html, md = render_report(
+        evaluate_thresholds(_BASELINE), _BY_KIND, 51, 30, "2026-11-19", model_checks=mc
+    )
+    for blob in (html, md):
+        assert "raw_hallucination_rate" in blob
+        assert "integration" in blob.lower()  # honest scope: live numbers are integration-only

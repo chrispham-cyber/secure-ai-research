@@ -64,7 +64,7 @@ infrastructure, and the real security primitives, so later phases build on solid
 - [ ] Week 13 — Evaluation metrics (grounding, citation accuracy, refusal); uncited answers score zero
 - [ ] Week 14 — Benchmark suite (≥50 items) in the repo format; methodology write-up
 - [ ] Week 15 — Prompt-injection and information-disclosure red-team evals; acceptance criteria
-- [ ] Week 16 — Results dashboard; regression gate wired into CI (unit-level)
+- [x] Week 16 — Results dashboard; regression gate wired into CI (unit-level) — static HTML/MD report + the Phase-4 pipeline gate; **+ scripted model-behavior gate (SAIR follow-up #3)**: raw hallucination / false refusal / injection-following scored on a baseline generator's RAW output through the real `ask()` pipeline, gated in CI at a strict zero bound. It proves the harness *discriminates* (it catches an unsafe generator), NOT that a real model is safe — live-model numbers run behind the `-m integration` marker as an observed ceiling, never a hard CI bound.
 
 **Deliverables:** a reproducible benchmark + results and documented acceptance thresholds.
 

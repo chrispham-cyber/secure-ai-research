@@ -32,3 +32,8 @@ def test_main_writes_both_report_files_and_returns_zero(tmp_path):
     assert (tmp_path / "phase4-eval-report.html").is_file()
     assert (tmp_path / "phase4-eval-report.md").is_file()
     assert "grounding" in (tmp_path / "phase4-eval-report.md").read_text()
+
+
+def test_main_runs_both_gates_and_passes(tmp_path):
+    assert main(out_dir=tmp_path) == 0
+    assert "raw_hallucination_rate" in (tmp_path / "phase4-eval-report.md").read_text()
