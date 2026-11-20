@@ -19,3 +19,13 @@ class Generator(Protocol):
     """Produces an answer string from a prompt and the retrieved passages it may ground on."""
 
     def generate(self, prompt: str, passages: Sequence[str]) -> str: ...
+
+
+class GeneratorError(RuntimeError):
+    """A generator failed to produce usable output.
+
+    Raised by a real generator (e.g. the Ollama adapter) on transport failure, a non-2xx
+    response, a decode failure, or an empty/whitespace completion. ``ResearchService`` maps it
+    to ``Outcome.FETCH_ERROR`` with one audit record — never a silent fallback to another
+    generator, never a fabricated answer (design §10 Q1, fail-closed).
+    """
