@@ -31,7 +31,7 @@ an OIDC provider, Fernet-at-rest, a live Ollama model) sits behind an **opt-in `
 seam**. The one remaining fail-loud stub is `OllamaEmbedder` (local *embedding* via Ollama);
 the default `HashingEmbedder` is real and deterministic.
 
-**Tests:** **467 hermetic unit tests** (run in CI with no live services) + **20 integration
+**Tests:** **474 hermetic unit tests** (run in CI with no live services) + **20 integration
 tests** (opt-in, exercised against real Postgres/MinIO/Ollama/Keycloak). Every pushed commit
 runs lint · type · unit · supply-chain in [CI](.github/workflows/ci.yml).
 
@@ -165,7 +165,7 @@ secure-ai-research/
 ├── infrastructure/          # containers, identity (roles), model-runtime (registry), otel
 ├── security-controls/       # audit, supply-chain, access-control, encryption, IR (controls → NIST)
 ├── scripts/                 # bootstrap, gen-sbom, hash-model, new_research_record
-├── tests/                   # 467 hermetic unit tests + 20 opt-in integration tests
+├── tests/                   # 474 hermetic unit tests + 20 opt-in integration tests
 ├── docker-compose.yml Makefile pyproject.toml requirements*.txt env.example
 └── .devcontainer/ .github/   # reproducible dev env + CI (lint/type/test/pip-audit/SBOM/gitleaks)
 ```

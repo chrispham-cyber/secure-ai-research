@@ -29,7 +29,7 @@ def test_research_endpoints_not_described_as_501():
 
 def test_readme_shows_ci_and_coverage():
     assert "actions/workflows/ci.yml/badge.svg" in _README
-    assert "467" in _README  # unit-test count
+    assert "474" in _README  # unit-test count (the -m "not integration" suite)
 
 
 def test_readme_surfaces_compliance_evidence():
