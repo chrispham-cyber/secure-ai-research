@@ -25,6 +25,14 @@ or the completeness check drifts — **a dependency change that is not re-attest
 sbom-release` + commit) turns CI red.** This committed SHA-256 pin is the in-posture "signed
 SBOM" (a cryptographic signature is *Future work*, below).
 
+**What the digest covers.** The manifest SHA-256 is a *dependency-drift* pin, taken over the
+canonical `{name, version, purl}` projection of the components — it reddens CI on any
+added, removed, or version-changed dependency. It is deliberately **not** a whole-file hash:
+git already provides integrity for the committed `sbom/` artifacts, and widening the digest
+into volatile fields (`license`, `externalReferences`) would flap the gate on benign
+tool-output changes. Whole-file tamper-evidence, if ever required, is a separate control
+(git, or a cryptographic signature — see *Future work*).
+
 **Environment SBOM — dev convenience.**
 
 ```bash
