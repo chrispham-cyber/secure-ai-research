@@ -9,6 +9,10 @@ fails CI instead of leaving a dead citation behind. Pure + offline.
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
+from collections.abc import Iterable
+from pathlib import Path
 from typing import NamedTuple
 
 _BACKTICKED = re.compile(r"`([^`]+)`")
@@ -46,3 +50,34 @@ def parse_evidence_matrix(markdown: str) -> Citations:
             elif "/" in token:
                 files.add(token)
     return Citations(frozenset(files), frozenset(nodes))
+
+
+def missing_files(files: Iterable[str], repo_root: Path) -> list[str]:
+    """Return the cited paths (repo-root-relative) that do not exist, sorted."""
+    return sorted(f for f in files if not (repo_root / f).exists())
+
+
+def uncollectable_nodes(nodes: Iterable[str], repo_root: Path) -> list[str]:
+    """Return the cited pytest node ids that pytest cannot collect, sorted.
+
+    Collection (not execution) is the check: a node that collects exists and imports cleanly, and
+    the same CI run that invokes this also runs those tests, so a *failing* cited test is caught by
+    the suite, never silently. One batched ``--collect-only`` runs first; only if that is non-zero
+    does it fall back to per-node runs to name precisely which citations are dead.
+    """
+    node_list = list(nodes)
+    if not node_list:
+        return []
+    if _collect_ok(node_list, repo_root):
+        return []
+    return sorted(n for n in node_list if not _collect_ok([n], repo_root))
+
+
+def _collect_ok(nodes: list[str], repo_root: Path) -> bool:
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *nodes],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
