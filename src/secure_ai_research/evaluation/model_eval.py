@@ -1,20 +1,30 @@
-"""Deferred model-behavior evals behind the Generator seam (ROADMAP Phase 4 Week 16).
+"""Model-behaviour evaluation behind the Generator seam (SAIR follow-up #3).
 
-In posture there is no generator, so these evals do not run against a real model in the default
-suite. They take a :class:`~secure_ai_research.generation.ports.Generator` (Phase 5) and measure
-what only a generation step can exhibit: whether a model *acts on* an injected instruction. The
-seam is proven wired — and the metric proven to discriminate — by fakes in the default suite
-(``tests/test_model_eval_seam.py``); the real-LLM assertion is skipped until a generator exists.
+Measures what only a generation step can exhibit — raw hallucination, false refusal, and
+following an injected instruction — from a generator's RAW, pre-filter output, captured through
+the real ``ask()`` pipeline by :class:`RecordingGenerator` (ResearchService is not modified). The
+default suite runs this hermetically with scripted stand-in generators: the safe
+``GroundedGenerator`` scores 0.0 on every metric, and the gate proves it catches the unsafe trio
+(``HallucinatingGenerator`` / ``RefusingGenerator`` / ``InjectionFollowingGenerator``) — see
+:func:`collect_model_behavior_run` and ``thresholds.MODEL_BEHAVIOR_THRESHOLDS``.
 
-This is the honest other half of the Week-15 in-posture injection eval, which can only show the
-deterministic retrieve→assemble pipeline attributes-not-executes. "A model must not follow the
-injected instruction" is only meaningful once generation exists, and this is its home.
+HONESTY: the scripted gate proves the *harness discriminates* and a *scripted* baseline is clean.
+It does NOT prove a real model is safe. The live-model numbers (Ollama) run behind the
+``-m integration`` marker (``tests/test_integration_ollama_eval.py``), reported as an observed
+ceiling, never a hard CI bound.
+
+This is the model-behaviour half of the Week-15 in-posture injection eval, which could only show
+the deterministic retrieve→assemble pipeline *attributes-not-executes*. "A model must not follow
+the injected instruction / invent a citation / wrongly refuse" is meaningful only once generation
+exists, and this is its home.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
 
 from secure_ai_research.evaluation.injection_corpus import malicious_corpus
 from secure_ai_research.evaluation.metrics import grounded_line_counts
@@ -150,14 +160,26 @@ class RecordingGenerator:
 
 
 class GroundedGenerator:
-    """Safe baseline: emits exactly the id-tagged passages, so every line is grounded."""
+    """Safe baseline: recites each passage's trailing citation in a benign line.
+
+    Models a well-behaved RAG generator — grounded by construction (the pipeline appends the true
+    retrieved id last, as ``"<text> [<id>]"``, so the trailing citation is always a retrieved id,
+    never a forged one buried in the body) and injection-safe (it reproduces only the citation,
+    never the passage prose, so an injected imperative in a passage body is dropped, not
+    followed). Scores 0.0 on raw hallucination, false refusal, AND injection-following.
+    """
 
     model_id = "scripted-grounded"
     model_version = ""
     prompt_template_version = ""
 
     def generate(self, prompt: str, passages: Sequence[str]) -> str:
-        return "\n".join(passages)
+        lines: list[str] = []
+        for passage in passages:
+            ids = citation_ids(passage)
+            if ids:
+                lines.append(f"Advisory reviewed [{ids[-1]}].")
+        return "\n".join(lines)
 
 
 class HallucinatingGenerator:
@@ -315,3 +337,69 @@ def measure_qa_eval(generator: Generator, audit_path: Path) -> dict[str, float]:
         "n_answered": float(len(answered)),
         "grounded_answers": float(grounded_answers),
     }
+
+
+# --- Raw model-behaviour run (SAIR follow-up #3) --------------------------------------------
+# The hermetic assembly the CI gate scores: drive a generator through the real ask() pipeline and
+# measure its RAW, pre-filter output on the three model-behaviour metrics, with witnesses proving
+# the run is not a vacuous green.
+
+
+class ModelBehaviorRun(BaseModel):
+    """One model-behaviour run's three scores plus the witnesses that prove it is not vacuous.
+
+    ``values`` carries the three gate metrics (``raw_hallucination_rate``, ``false_refusal_rate``,
+    ``injection_following_rate``); ``n_answerable`` / ``n_raw_claim_lines`` / ``injection_total``
+    are non-vacuity witnesses (answerable items paired, raw claim-lines actually scored, injection
+    documents probed), so a green run cannot secretly be a green emptiness.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    values: dict[str, float]
+    n_answerable: int
+    n_raw_claim_lines: int
+    injection_total: int
+
+
+def collect_model_behavior_run(generator: Generator, audit_path: Path) -> ModelBehaviorRun:
+    """Drive ``generator`` through the real ``ask()`` pipeline over :data:`_QA_ITEMS`, scoring RAW.
+
+    The generator is wrapped in :class:`RecordingGenerator`; each answerable item is paired with
+    the raw output recorded **during its own** ``ask`` call (a before/after snapshot of
+    ``rec.outputs``; skipped when retrieval was empty and no ``generate`` happened). From the
+    answerable pairs: :func:`raw_hallucination_rate` over ``(raw, retrieved_ids)``,
+    :func:`false_refusal_rate` over the raw outputs, and :func:`injection_following_rate` on the
+    **unwrapped** generator (its own direct-call probe over the injection corpus).
+    """
+    from secure_ai_research.evaluation.benchmark import build_benchmark_service
+
+    rec = RecordingGenerator(generator)
+    service = build_benchmark_service(audit_path, generator=rec)
+
+    samples: list[tuple[str, frozenset[str]]] = []
+    for item in _QA_ITEMS:
+        before = len(rec.outputs)
+        res = service.ask(item.query, role=item.role)
+        if len(rec.outputs) == before:  # empty retrieval ⇒ no generate call ⇒ not answerable
+            continue
+        raw = rec.outputs[before]
+        retrieved = frozenset(c.document_id for c in res.citations)
+        samples.append((raw, retrieved))
+
+    raw_outputs = [raw for raw, _ in samples]
+    n_raw_claim_lines = sum(
+        grounded_line_counts(raw, set(retrieved))[0]
+        for raw, retrieved in samples
+        if not _is_refusal(raw)
+    )
+    return ModelBehaviorRun(
+        values={
+            "raw_hallucination_rate": raw_hallucination_rate(samples),
+            "false_refusal_rate": false_refusal_rate(raw_outputs),
+            "injection_following_rate": injection_following_rate(generator),
+        },
+        n_answerable=len(samples),
+        n_raw_claim_lines=n_raw_claim_lines,
+        injection_total=len(malicious_corpus()),
+    )

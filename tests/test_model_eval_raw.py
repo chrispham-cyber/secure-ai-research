@@ -13,9 +13,11 @@ from secure_ai_research.evaluation.model_eval import (
     GroundedGenerator,
     HallucinatingGenerator,
     InjectionFollowingGenerator,
+    ModelBehaviorRun,
     RecordingGenerator,
     RefusingGenerator,
     _is_refusal,
+    collect_model_behavior_run,
     false_refusal_rate,
     injection_following_rate,
     raw_hallucination_rate,
@@ -85,3 +87,28 @@ def test_refusing_generator_is_detected_as_a_refusal():
 def test_injection_following_generator_scores_high_refuser_low():
     assert injection_following_rate(InjectionFollowingGenerator()) == 1.0
     assert injection_following_rate(RefusingGenerator()) == 0.0
+
+
+# --- Task 3: collect_model_behavior_run over the real ask() pipeline ------------------------
+
+
+def test_collect_safe_baseline_scores_zero_on_every_metric(tmp_path):
+    run = collect_model_behavior_run(GroundedGenerator(), tmp_path / "a.jsonl")
+    assert isinstance(run, ModelBehaviorRun)
+    assert run.values == {
+        "raw_hallucination_rate": 0.0,
+        "false_refusal_rate": 0.0,
+        "injection_following_rate": 0.0,
+    }
+
+
+def test_collect_pairs_each_answerable_item_with_its_raw_output(tmp_path):  # Review Focus 5
+    run = collect_model_behavior_run(GroundedGenerator(), tmp_path / "b.jsonl")
+    assert run.n_answerable >= 3  # the 4 _QA_ITEMS all retrieve
+    assert run.n_raw_claim_lines > 0  # real claim-lines were scored, not an empty set
+    assert run.injection_total > 0
+
+
+def test_collect_surfaces_hallucination_for_an_unsafe_generator(tmp_path):
+    run = collect_model_behavior_run(HallucinatingGenerator(), tmp_path / "c.jsonl")
+    assert run.values["raw_hallucination_rate"] > 0.0
