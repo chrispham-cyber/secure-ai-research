@@ -247,7 +247,13 @@ class ResearchService:
             model_output=model_output,
             conclusion=f"{model_id}: assembled from cited passages",
         )
-        answer = build_report(record)
+        # Faithfulness floor: build_report drops any surviving line whose claim does not
+        # overlap its cited passage text — catches a valid-id line with invented content.
+        # Deterministic lines ARE the passage (+id), so they overlap fully and are unaffected.
+        passages_by_id = {
+            did: [hit.text for hit in hits if hit.document_id == did] for did in ordered_ids
+        }
+        answer = build_report(record, passages_by_id)
         emit(record, self._audit_path)
         return ResearchResult(Outcome.OK, answer, citations, rid)
 
