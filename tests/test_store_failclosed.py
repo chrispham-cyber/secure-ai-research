@@ -82,3 +82,43 @@ def test_denied_role_never_reaches_store_no_fetch_error(tmp_path):
     # store can never turn a DENIED into a FETCH_ERROR.
     res = _service(_RaisingTypedStore(), tmp_path / "a.jsonl").search("x", role="")
     assert res.outcome is Outcome.DENIED
+
+
+class _UpsertRaisesWhenArmed:
+    """VectorStore whose upsert raises once armed — fails the request-time re-index of a
+    freshly fetched CVE (fetch-on-miss) without breaking the initial corpus index."""
+
+    def __init__(self) -> None:
+        self.armed = False
+
+    def upsert(self, entries) -> None:  # noqa: ANN001 - test fake
+        if self.armed:
+            raise VectorStoreError("pg down during upsert")
+
+    def query(self, embedding, *, allowed_document_ids, limit):  # noqa: ANN001 - test fake
+        return []
+
+
+def test_cve_live_fetch_reindex_upsert_failure_is_fetch_error_one_record(tmp_path):
+    # Fetch-on-miss re-indexes the fetched CVE via self._store.upsert, which is OUTSIDE the
+    # store.query try/except. A store outage there must STILL fail closed — FETCH_ERROR with
+    # exactly one audit record — never an unhandled 500 that leaves no audit trail (the precise
+    # invariant Review Focus #1 names). Only senior_analyst may live-fetch.
+    audit = tmp_path / "audit.jsonl"
+    store = _UpsertRaisesWhenArmed()
+    docs = nvd.load(_nvd_sample_bytes())
+    svc = ResearchService(
+        HashingEmbedder(),
+        store,
+        authorize,
+        audit,
+        fetch_missing=lambda _cid: nvd.load(_nvd_sample_bytes()),
+    )
+    svc.index([docs[0]])  # index CVE-2099-0001 only → senior is authorized (not DENIED)
+    store.armed = True  # the next upsert (re-index of the fetched doc) will raise
+    res = svc.research_cve("CVE-2099-0002", role="senior_analyst")  # absent → fetch → re-index
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert res.answer == ""
+    assert res.citations == []
+    assert len(_audit_lines(audit)) == 1  # exactly one record — not zero (no silent 500)
+    assert "pg down during upsert" not in audit.read_text()  # only the exception type recorded

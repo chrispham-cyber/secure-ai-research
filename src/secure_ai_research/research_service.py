@@ -202,7 +202,32 @@ class ResearchService:
                         f"fetch_error: live fetch failed ({type(exc).__name__})",
                     )
                     return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
-                self._index_if_absent(fetched)
+                try:
+                    self._index_if_absent(fetched)
+                except VectorStoreError as exc:
+                    # The store faulted while re-indexing the freshly fetched CVE. This upsert
+                    # is outside the store.query try/except below, so it must fail closed here
+                    # too — one terminal record, FETCH_ERROR, exception type only — never an
+                    # unhandled 500 that leaves an analyst's live-fetch action with no audit trail.
+                    self._emit_terminal(
+                        rid,
+                        analyst_id,
+                        objective,
+                        now,
+                        f"fetch_error: retrieval failed ({type(exc).__name__})",
+                    )
+                    return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+                except Exception as exc:
+                    # Defense in depth: _index_if_absent also embeds; any non-typed failure must
+                    # still become FETCH_ERROR with exactly one audit record, type only.
+                    self._emit_terminal(
+                        rid,
+                        analyst_id,
+                        objective,
+                        now,
+                        f"fetch_error: retrieval failed ({type(exc).__name__})",
+                    )
+                    return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
                 allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
                 scope = allowed & {doc_id}
 
