@@ -12,8 +12,9 @@ from importlib.resources import files
 import pytest
 from fastapi.testclient import TestClient
 
+from _authtokens import mint_hs256, pinned_local_identity
 from secure_ai_research import config
-from secure_ai_research.api.deps import get_service
+from secure_ai_research.api.deps import get_identity_provider, get_service
 from secure_ai_research.api.main import app
 from secure_ai_research.generation.ollama import OllamaGenerator
 from secure_ai_research.ingestion import nvd
@@ -52,6 +53,17 @@ def _svc(tmp_path, generator=None) -> ResearchService:
     return svc
 
 
+def _bearer(role: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {mint_hs256(role)}"}
+
+
+@pytest.fixture(autouse=True)
+def _pin_identity():
+    app.dependency_overrides[get_identity_provider] = pinned_local_identity
+    yield
+    app.dependency_overrides.pop(get_identity_provider, None)
+
+
 @pytest.fixture(autouse=True)
 def _clear_overrides():
     yield
@@ -60,14 +72,14 @@ def _clear_overrides():
 
 def test_api_default_answer_unchanged(tmp_path):
     app.dependency_overrides[get_service] = lambda: _svc(tmp_path)
-    resp = client.get("/research/cve/CVE-2099-0001", headers={"X-Role": "research_analyst"})
+    resp = client.get("/research/cve/CVE-2099-0001", headers=_bearer("research_analyst"))
     assert resp.status_code == 200
     assert resp.json()["answer"] == _GOLDEN_ANSWER
 
 
 def test_api_uses_injected_generator(tmp_path):
     app.dependency_overrides[get_service] = lambda: _svc(tmp_path, _RecordingGen())
-    resp = client.get("/research/cve/CVE-2099-0001", headers={"X-Role": "research_analyst"})
+    resp = client.get("/research/cve/CVE-2099-0001", headers=_bearer("research_analyst"))
     assert resp.status_code == 200
     assert _FAKE_LINE in resp.json()["answer"]
 
