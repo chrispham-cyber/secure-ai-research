@@ -73,19 +73,30 @@ constrained permission set**, never the analyst's. Concretely:
 This is the guard against **excessive agency** and **confused-deputy** escalation (threats
 T7/T9 in the [threat model](../../architecture/threat-model.md)).
 
-## Phase-1 development auth (throwaway stub)
+## Authentication: verified signed tokens (Slice 4)
 
-Phase 1 does **not** stand up an identity provider. For local development only, a role is
-asserted with a request header:
+The caller's role is resolved from a **verified signed token**, not a self-asserted header. The
+`get_role` dependency ([`api/deps.py`](../../src/secure_ai_research/api/deps.py)) runs before every
+`/research/*` handler and maps a credential failure to **401** (with `WWW-Authenticate: Bearer` and
+a reason-free body — no auth-failure oracle) and an unavailable identity backend to **503** (fail
+closed). Both are boundary rejections: they write **zero** audit records (the request never reaches
+the service). Only the role *source* is new — the downstream RBAC/ABAC `authorize` gate is byte-for-
+byte unchanged.
 
-```
-X-Role: research_analyst
-```
+Three modes, selected by `SAIR_AUTH` (see [`config.py`](../../src/secure_ai_research/config.py)):
 
-This maps the header value to one of the six roles above. **It is a throwaway stub and not
-an authentication control** — a header is self-asserted and trivially spoofable (threat
-T1). It exists so the authorization *boundary* can be built and tested in Phase 1.
+| `SAIR_AUTH` | How the role is established | Dependency |
+|-------------|------------------------------|------------|
+| `local` (default) | Verifies an HS256 `Authorization: Bearer <jwt>` with a shared secret (`SAIR_AUTH_DEV_SECRET`) — stdlib only, offline, no Keycloak. The role is **authenticated**, not asserted. | `pyjwt` **not** required |
+| `oidc` | Verifies an RS256 token against a Keycloak realm's JWKS (`aud`/`iss`/`exp` required). | opt-in `[oidc]` extra (`pyjwt[crypto]`), lazy-imported |
+| `insecure` | Restores the old self-asserted `X-Role` header verbatim — **spoofable**, dev only; the factory logs a `WARNING` on selection. | — |
 
-**Phase 5 replaces it** with Keycloak/OIDC (optional `identity` compose profile today):
-roles come from signed tokens, and the `X-Role` shortcut is removed. The authorization
-logic downstream of identity does not change — only the source of the verified role does.
+**Fail-closed default.** In `local` mode the shipped placeholder secret (and any secret shorter
+than 16 chars) is refused: every request returns **503** unless `SAIR_AUTH_DEV_SECRET` is set to a
+strong secret **or** `SAIR_AUTH_ALLOW_DEV_SECRET=1` explicitly opts into the dev secret. So the
+default build is never silently forgeable — it either has a real secret or authenticates nothing.
+
+The role claim is read from `SAIR_AUTH_ROLE_CLAIM` (default `role`) and mapped to one of the six
+roles above; a non-string/absent claim resolves to an empty role (which `authorize` denies). The
+live Keycloak realm wiring and an end-to-end integration test live under the `identity` compose
+profile ([`sair-realm.json`](sair-realm.json)).

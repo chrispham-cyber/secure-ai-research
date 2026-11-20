@@ -12,8 +12,12 @@ from collections.abc import Callable
 from functools import lru_cache
 from importlib.resources import files
 
+from fastapi import Depends, Header, HTTPException
+
 from secure_ai_research.config import get_settings
 from secure_ai_research.generation.factory import make_generator
+from secure_ai_research.identity.factory import make_identity_provider
+from secure_ai_research.identity.ports import AuthError, IdentityProvider, IdentityUnavailable
 from secure_ai_research.ingestion import attack, kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
@@ -81,3 +85,39 @@ def get_service() -> ResearchService:
     )
     service.index(sigma.load(sigma_raw))
     return service
+
+
+@lru_cache
+def get_identity_provider() -> IdentityProvider:
+    """Return the process-wide IdentityProvider selected by ``SAIR_AUTH`` (cached).
+
+    The factory never raises; a fail-closed / missing-extra / infra failure surfaces at
+    ``identify()`` time as :class:`IdentityUnavailable`, so this dependency is safe to inject via
+    ``Depends`` (tests override it) and such failures become a 503 in :func:`get_role`, never an
+    unhandled 500.
+    """
+    return make_identity_provider(get_settings())
+
+
+def get_role(
+    authorization: str = Header(default=""),
+    x_role: str = Header(default=""),
+    identity: IdentityProvider = Depends(get_identity_provider),
+) -> str:
+    """Resolve the caller's authenticated role from request credentials.
+
+    Raises 401 when the credential is missing/malformed/rejected (with ``WWW-Authenticate:
+    Bearer`` and a reason-free body, so there is no auth-failure oracle) and 503 when the identity
+    backend/config is unavailable (fail closed). The returned role string feeds the unchanged
+    downstream authorization gate.
+    """
+    try:
+        return identity.identify(authorization=authorization, x_role=x_role)
+    except AuthError:
+        raise HTTPException(
+            status_code=401,
+            detail="authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except IdentityUnavailable:
+        raise HTTPException(status_code=503, detail="identity provider unavailable") from None

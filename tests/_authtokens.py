@@ -17,8 +17,18 @@ import json
 import time
 from typing import Any
 
+from secure_ai_research.identity.providers import LocalTokenIdentityProvider
+
 # 28 chars — long + non-placeholder, so it passes the Slice-4 dev-secret fail-closed gate.
 TEST_SECRET = "test-secret-0123456789abcdef"
+
+
+def pinned_local_identity() -> LocalTokenIdentityProvider:
+    """A LocalTokenIdentityProvider bound to TEST_SECRET, for pinning route tests' identity via
+    ``app.dependency_overrides[get_identity_provider] = pinned_local_identity`` (bypasses the
+    env-driven factory + fail-closed gate). Uses real ``time.time`` so default-minted tokens are
+    valid."""
+    return LocalTokenIdentityProvider(TEST_SECRET)
 
 
 def _b64url(raw: bytes) -> str:
