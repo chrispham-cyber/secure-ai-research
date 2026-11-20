@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import pytest
+
+import secure_ai_research.supply_chain.sbom as S
 from secure_ai_research.supply_chain.sbom import (
     SbomError,
     _normalize,
@@ -13,6 +17,11 @@ from secure_ai_research.supply_chain.sbom import (
     read_manifest,
     sbom_digest,
 )
+
+_REPO = Path(__file__).resolve().parents[1]
+_REQ = _REPO / "requirements.txt"
+_SBOM_FILE = _REPO / "sbom/release-sbom.cdx.json"
+_MANIFEST = _REPO / "sbom/sbom.manifest.json"
 
 _SBOM = json.dumps(
     {
@@ -74,3 +83,48 @@ def test_read_manifest(tmp_path):
 
 def test_sbom_error_is_runtime_error():
     assert issubclass(SbomError, RuntimeError)
+
+
+# --- Task 2: real generation + committed-artifact integrity/drift gate ---
+
+
+def test_generate_release_sbom_raises_on_bad_path(tmp_path):
+    with pytest.raises(SbomError):
+        S.generate_release_sbom(tmp_path / "nope.txt", _REPO)
+
+
+def test_release_sbom_is_reproducible():
+    a = S.generate_release_sbom(_REQ, _REPO)
+    b = S.generate_release_sbom(_REQ, _REPO)
+    assert a == b  # Review Focus 1: byte-identical across runs
+
+
+def test_sbom_is_well_formed_cyclonedx():
+    d = json.loads(_SBOM_FILE.read_bytes())
+    assert d["bomFormat"] == "CycloneDX"
+    assert d["components"] and all(
+        c.get("name") and c.get("version") and c.get("purl") for c in d["components"]
+    )
+
+
+def test_committed_sbom_matches_regeneration():
+    fresh = S.generate_release_sbom(_REQ, _REPO)
+    assert S.sbom_digest(fresh) == S.sbom_digest(_SBOM_FILE.read_bytes())  # drift gate
+
+
+def test_manifest_digest_matches_committed_sbom():
+    man = S.read_manifest(_MANIFEST)
+    sbom = _SBOM_FILE.read_bytes()
+    assert man["sbom_sha256"] == S.sbom_digest(sbom)
+    assert man["component_count"] == len(json.loads(sbom)["components"])
+
+
+def test_sbom_covers_every_pinned_runtime_dependency():
+    assert S.missing_components(_REQ, _SBOM_FILE.read_bytes()) == []  # SR-3 evidence node
+
+
+def test_digest_is_sensitive_to_component_change():
+    d = json.loads(_SBOM_FILE.read_bytes())
+    d["components"][0]["version"] = "9.9.9-mutant"
+    mutated = S.sbom_digest(json.dumps(d).encode())
+    assert mutated != S.read_manifest(_MANIFEST)["sbom_sha256"]  # Review Focus 5: drift is caught

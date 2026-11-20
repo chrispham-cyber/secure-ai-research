@@ -1,0 +1,7 @@
+{
+  "component_count": 24,
+  "sbom_file": "sbom/release-sbom.cdx.json",
+  "sbom_sha256": "3c786d7dc8e14667edacc4ec9b016b9e539c3a697c1a235310c0a5f34e36f3ba",
+  "source": "requirements.txt",
+  "tool": "cyclonedx-py requirements --output-reproducible"
+}
