@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     ollama_host: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"
+    # Text-generation backend behind the Generator seam. "join" (default) is the deterministic
+    # non-LLM generator — byte-identical to the pre-LLM id-route; "ollama" calls a local model.
+    generator: Literal["join", "ollama"] = "join"
+    generation_model: str = "mistral:latest"
     model_registry_path: Path = Path("infrastructure/model-runtime/model-registry.json")
     audit_log_path: Path = Path("audit/research-records.jsonl")
 
