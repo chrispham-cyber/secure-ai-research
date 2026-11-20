@@ -51,7 +51,7 @@
   - `AuthError(Exception)` — client credential failure → 401
   - `IdentityUnavailable(Exception)` — infra/config failure → 503
   - `verify_hs256(token: str, secret: str, *, now: float) -> dict` — raises `AuthError` on any invalid token; returns the claims dict
-  - `tests/_authtokens.py`: `TEST_SECRET = "test-secret-0123456789abcdef"` (28 chars); `mint_hs256(role="research_analyst", *, secret=TEST_SECRET, exp_delta=3600.0, now=1_000_000.0, role_claim="role", alg="HS256", include_exp=True, sign_with=None, extra=None) -> str` (forge knobs: `alg` sets the header alg incl. `"none"`; `include_exp=False` omits exp; `sign_with` signs with a different secret; `extra` merges extra claims)
+  - `tests/_authtokens.py`: `TEST_SECRET = "test-secret-0123456789abcdef"` (28 chars); `mint_hs256(role="research_analyst", *, secret=TEST_SECRET, exp_delta=3600.0, now=None, role_claim="role", alg="HS256", include_exp=True, sign_with=None, extra=None) -> str` where **`now=None` means real `time.time()`** (so route tokens are valid against the runtime provider's `time.time()`; the verify unit tests pass an explicit `now=NOW`). Forge knobs: `alg` sets the header alg incl. `"none"`; `include_exp=False` omits exp; `sign_with` signs with a different secret; `extra` merges extra claims last (so `extra={"exp": ...}`/`{"role": ...}` overrides).
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_identity_tokens.py` — one per 5.3 rule, using `_authtokens.mint_hs256` and raw-built tokens. `NOW = 1_000_000.0`.
 
