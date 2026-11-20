@@ -46,7 +46,7 @@ click==8.5.1
     #   black
     #   pip-tools
     #   uvicorn
-cyclonedx-bom==5.5.0
+cyclonedx-bom==8.0.1
     # via secure-ai-research (pyproject.toml)
 cyclonedx-python-lib==10.5.0
     # via
