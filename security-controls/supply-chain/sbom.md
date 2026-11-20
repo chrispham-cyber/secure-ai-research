@@ -62,15 +62,24 @@ make sbom-verify    # cosign verify-blob --insecure-ignore-tlog=true  (needs cos
   binary, exactly as the SBOM generator shells out to `cyclonedx-py`; the default
   `-m "not integration"` test suite never needs cosign or network.
 - **CI verifies, never signs.** The `sbom-verify` CI job installs cosign and verifies the committed
-  signature with the **public key only** — no secret, no OIDC `id-token`. It **skips** cleanly until
-  a signature is committed and **gates** (red on mismatch — a stale or forged SBOM) once
-  `sbom/cosign.pub` + the `.sig` are present. A re-attested SBOM (`make sbom-release`) that is not
-  re-signed is caught here.
+  signature with the **public key only** — no secret, no OIDC `id-token`. Pre-ceremony it **skips**
+  cleanly (fail-open *by design* — no signature exists yet, so fail-closed would redden every run);
+  once `sbom/cosign.pub` + the `.sig` are present it **gates** (red on mismatch — a stale or forged
+  SBOM). A re-attested SBOM (`make sbom-release`) that is not re-signed is caught here.
 - **One-time key ceremony** (the key-holder, offline): `cosign generate-key-pair` (keep
   `cosign.key` private — it is git-ignored by `*.key`, set a `COSIGN_PASSWORD`) → commit
   `sbom/cosign.pub` → `make sbom-release` (if needed) then `make sbom-sign` → commit
   `sbom/release-sbom.cdx.json.sig`. **Rotation** = generate a new pair, re-sign, commit the new
   public key + signature.
+- **Hardening at go-live (required when the ceremony runs).** The committed `sbom/cosign.pub` is a
+  trust anchor that lives in the same (PR-controlled) tree as the artifact it anchors — a change
+  that swaps *both* the key and the `.sig` would still verify. Low-risk in this **private,
+  single-maintainer** repo, but when signing goes live, close it: (1) pin the expected public-key
+  **SHA-256 fingerprint** outside the PR tree (a protected repo/org variable, or hardcoded in the
+  workflow on `main`) and fail the job unless `sbom/cosign.pub` matches it before verifying; and
+  (2) flip the job **fail-closed** — once a signature is required, a *missing* `.sig`/pub is an
+  **error**, not a skip (gate on a `signing-required` repo variable or a committed marker). Both
+  steps need the key/signature to exist first, which is why they land with the ceremony, not before.
 - **Why keyed and not keyless.** Keyless Sigstore (Fulcio/Rekor) would publish this **private**
   repo's CI identity to the **public** Rekor transparency log, and requires a network and an
   `id-token` in CI — both outside the posture. Keyless/Rekor therefore stays *Future work* (below).
