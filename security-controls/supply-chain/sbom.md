@@ -89,9 +89,10 @@ actually verified — no box is checked on trust.
   `cyclonedx-bom` 5.5.0 → **9.0.0** (lifting the `packaging < 26` cap; `packaging` now `26.3`), and
   the release SBOM was **re-attested** with 9.x (CycloneDX spec 1.5 → 1.6). The `{name,version,purl}`
   integrity digest is unchanged — same 24 runtime components — so the drift/completeness gate stayed
-  green. **Residual (honest):** a *separate, pre-existing* dev-tool advisory remains — `black==25.12.0`
-  (`PYSEC-2026-2120`/`2121`, `CVE-2026-114134`, fixed in 26.3.1+, within our `black<27.0` cap). Dev-only,
-  **not** in the release SBOM; tracked as a follow-up bump (Future work), untouched by this slice.
+  green. The one remaining dev-tool advisory — `black` (`PYSEC-2026-2120`/`2121`, `CVE-2026-114134`) —
+  was then **cleared** by flooring `black>=26.10.1` (now pinned `26.10.1`, the fix for all three; dev-only,
+  **not** in the release SBOM), also regression-guarded in `tests/test_dev_lock.py`. `pip-audit` over the
+  installed dev environment now reports **no known vulnerabilities**.
 - [~] Model integrity: the SHA-256 verifier is tested (`tests/test_verify_model.py`), but this
   scaffold ships **no real weights** (PUBLIC / synthetic) — N/A for v0.1.0, enforced once a model
   is pinned.
@@ -108,9 +109,9 @@ upstream); re-enable it there by moving to a maintained S3-compatible image.
 
 The `cyclonedx-bom` generator was bumped 5.5.0 → **9.0.0** (its own reviewed slice), clearing the
 dev-only `virtualenv` advisory and re-attesting the release SBOM (CycloneDX spec 1.5 → 1.6, integrity
-digest unchanged). The remaining dev-tool follow-up is `black==25.12.0` → ≥ 26.3.1 (`PYSEC-2026-2120`/
-`2121`, `CVE-2026-114134`); it is within the existing `black<27.0` cap and, like `virtualenv`, is a
-dev-only provisioning tool absent from the release SBOM.
+digest unchanged); a follow-up slice then floored `black` 25.12.0 → **26.10.1**, clearing the last
+dev-tool advisory. The dev toolchain is advisory-free as of this sign-off (`pip-audit`, installed env).
+No open dev-tool follow-ups remain.
 
 These controls address supply-chain tampering and secret exposure (threats T17/T18 in the
 [threat model](../../architecture/threat-model.md)).
