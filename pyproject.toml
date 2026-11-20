@@ -37,6 +37,9 @@ pgvector = [
     "psycopg[binary]>=3.2,<4.0",
     "pgvector>=0.3,<1.0",
 ]
+minio = [
+    "minio>=7.2,<8.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
