@@ -97,12 +97,17 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
-    command: start-dev
+    # --import-realm loads every *-realm.json under /opt/keycloak/data/import on boot.
+    # Import is idempotent: an already-present realm is skipped, so restarts are clean.
+    command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${SAIR_KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${SAIR_KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
       - "127.0.0.1:8080:8080"
+    volumes:
+      # Read-only: the realm export (sair-realm.json) is synthetic dev config, never secrets.
+      - ./infrastructure/identity:/opt/keycloak/data/import:ro
     profiles: ["identity"]
 
   otel-collector:
