@@ -33,9 +33,15 @@ class Settings(BaseSettings):
     # in-memory store — offline/hermetic, no dependency; "pgvector" uses Postgres/pgvector at
     # db_url (opt-in, requires the `pgvector` extra). Default keeps the platform offline.
     vector_store: Literal["memory", "pgvector"] = "memory"
+    # Object-store backend behind the ObjectStore seam. "memory" (default) is the deterministic
+    # in-memory provenance sink — offline/hermetic, no dependency; "minio" persists raw canonical
+    # payloads to MinIO/S3 at minio_* (opt-in, requires the `minio` extra). Default keeps the
+    # platform offline.
+    object_store: Literal["memory", "minio"] = "memory"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "sair-raw"
     ollama_host: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"
     # Text-generation backend behind the Generator seam. "join" (default) is the deterministic

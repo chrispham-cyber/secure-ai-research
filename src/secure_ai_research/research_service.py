@@ -37,6 +37,8 @@ from secure_ai_research.retrieval.ports import (
     VectorStore,
     VectorStoreError,
 )
+from secure_ai_research.storage.objectstore import InMemoryObjectStore
+from secure_ai_research.storage.ports import ObjectStore, ObjectStoreError
 
 
 class Outcome(StrEnum):
@@ -88,6 +90,7 @@ class ResearchService:
         *,
         fetch_missing: Callable[[str], list[IngestedDocument]] | None = None,
         generator: Generator | None = None,
+        object_store: ObjectStore | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -98,6 +101,9 @@ class ResearchService:
         # Default = JoinGenerator: output byte-identical to the pre-seam id-route, so the
         # deterministic suite and the Phase-4 1.0 gate are unchanged with no real generator.
         self._generator = generator or JoinGenerator()
+        # Default = InMemoryObjectStore: a dependency-free provenance sink, so the hermetic suite
+        # never imports the minio SDK and the default path is byte-identical.
+        self._object_store = object_store or InMemoryObjectStore()
         self._docs: dict[str, ResearchDocument] = {}
         self._lock = threading.Lock()
 
@@ -125,6 +131,10 @@ class ResearchService:
         doc = item.document
         chunks = chunk(item.text)
         vectors = self._embedder.embed(chunks)
+        # Provenance-first: persist the raw canonical bytes under the content hash BEFORE the
+        # vector upsert, so every indexed doc is backed by its stored source. A store fault here
+        # raises ObjectStoreError and fails closed on the request path (see research_cve).
+        self._object_store.put(doc.integrity_hash, item.canonical)
         self._store.upsert(
             [
                 ChunkRecord(f"{doc.document_id}#{i}", doc.document_id, chunks[i], vectors[i])
@@ -209,6 +219,20 @@ class ResearchService:
                     # is outside the store.query try/except below, so it must fail closed here
                     # too — one terminal record, FETCH_ERROR, exception type only — never an
                     # unhandled 500 that leaves an analyst's live-fetch action with no audit trail.
+                    self._emit_terminal(
+                        rid,
+                        analyst_id,
+                        objective,
+                        now,
+                        f"fetch_error: retrieval failed ({type(exc).__name__})",
+                    )
+                    return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+                except ObjectStoreError as exc:
+                    # Provenance put (inside _index_if_absent, before the vector upsert) faulted
+                    # while persisting the freshly fetched CVE. Same contract as the vector store
+                    # above — one terminal record, FETCH_ERROR, exception type only. The broad arm
+                    # below would also catch it; this typed arm mirrors the VectorStoreError arm
+                    # so object-store faults stay fail-closed if that broad net is ever narrowed.
                     self._emit_terminal(
                         rid,
                         analyst_id,

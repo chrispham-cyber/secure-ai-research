@@ -33,7 +33,8 @@ infrastructure, and the real security primitives, so later phases build on solid
 
 - [x] Week 5 — Ingestion loaders: NVD, CISA KEV → `ResearchDocument` with content hashes
 - [x] Week 5 — pgvector schema (`sair_chunks`, `vector(256)`) via `PgVectorStore._ensure_schema` — _Phase 5 Slice 2; opt-in `SAIR_VECTOR_STORE=pgvector`, exact-NN parity with the in-memory store_
-- [ ] Week 5 — Object store (MinIO) for raw payloads; schema **migrations** (Alembic) — _deferred: MinIO = next slice; schema is `CREATE TABLE IF NOT EXISTS`, no migration tool yet_
+- [x] Week 5 — Object store (MinIO) for raw payloads — _Phase 5 Slice 3; opt-in `SAIR_OBJECT_STORE=minio`, write-side provenance sink keyed by `integrity_hash`, persisted provenance-first at the index boundary; default in-memory, byte-identical/offline_
+- [ ] Week 5 — Schema **migrations** (Alembic) — _deferred: schema is `CREATE TABLE IF NOT EXISTS`, no migration tool yet_
 - [x] Week 6 — Ingestion: MITRE ATT&CK, Sigma; chunking that preserves citation boundaries
 - [x] Week 6 — Upsert chunks+embeddings to pgvector (idempotent `ON CONFLICT`, scope as a SQL predicate) — _Phase 5 Slice 2_
 - [ ] Week 6 — Local embeddings via Ollama — _deferred: `Embedder` seam in place (HashingEmbedder in posture); `OllamaEmbedder` still a fail-loud stub_

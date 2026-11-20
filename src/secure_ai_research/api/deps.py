@@ -22,6 +22,7 @@ from secure_ai_research.research_service import ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
 from secure_ai_research.retrieval.factory import make_vector_store
+from secure_ai_research.storage.factory import make_object_store
 
 
 @lru_cache
@@ -63,6 +64,7 @@ def get_service() -> ResearchService:
         settings.audit_log_path,
         fetch_missing=fetch_missing,
         generator=make_generator(settings),
+        object_store=make_object_store(settings),
     )
     raw = files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json").read_bytes()
     service.index(nvd.load(raw))
