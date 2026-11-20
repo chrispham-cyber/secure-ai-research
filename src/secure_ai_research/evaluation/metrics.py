@@ -17,18 +17,18 @@ from secure_ai_research.reporting.report import citation_ids
 from secure_ai_research.research_service import Outcome
 
 
-def grounding(result: EvalResult) -> float:
-    """Fraction of answer claim-lines grounded in a retrieved citation.
+def grounded_line_counts(answer: str, retrieved: set[str]) -> tuple[int, int]:
+    """``(claim_lines, grounded_lines)`` over an answer body.
 
-    A body line is *grounded* iff it carries at least one citation and every cited id is in
-    ``result.retrieved_ids``. The report's title / ``Sources:`` / blank / ``No cited
-    findings.`` lines are not claims. With no claim lines, grounding is ``1.0`` (nothing
-    false was claimed).
+    The shared line-classification that both :func:`grounding` and the raw-model hallucination
+    metric use, so neither can drift from ``build_report``'s drop rule. The report's title, the
+    ``Sources:`` line, blank lines, and ``No cited findings.`` are structural, not claims. A
+    claim line is *grounded* iff it carries at least one citation and every cited id is in
+    ``retrieved``.
     """
-    retrieved = set(result.retrieved_ids)
     claims = 0
     grounded = 0
-    for raw in result.answer.splitlines():
+    for raw in answer.splitlines():
         line = raw.strip()
         if (
             not line
@@ -41,6 +41,18 @@ def grounding(result: EvalResult) -> float:
         ids = citation_ids(line)
         if ids and all(cid in retrieved for cid in ids):
             grounded += 1
+    return claims, grounded
+
+
+def grounding(result: EvalResult) -> float:
+    """Fraction of answer claim-lines grounded in a retrieved citation.
+
+    A body line is *grounded* iff it carries at least one citation and every cited id is in
+    ``result.retrieved_ids``. The report's title / ``Sources:`` / blank / ``No cited
+    findings.`` lines are not claims. With no claim lines, grounding is ``1.0`` (nothing
+    false was claimed).
+    """
+    claims, grounded = grounded_line_counts(result.answer, set(result.retrieved_ids))
     return 1.0 if claims == 0 else grounded / claims
 
 
