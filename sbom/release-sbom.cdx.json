@@ -484,13 +484,14 @@
           "licenses": [
             {
               "license": {
+                "acknowledgement": "declared",
                 "id": "Apache-2.0"
               }
             }
           ],
           "name": "cyclonedx-py",
           "type": "application",
-          "version": "5.5.0"
+          "version": "9.0.0"
         },
         {
           "description": "Python library for CycloneDX",
@@ -532,19 +533,20 @@
           "licenses": [
             {
               "license": {
+                "acknowledgement": "declared",
                 "id": "Apache-2.0"
               }
             }
           ],
           "name": "cyclonedx-python-lib",
           "type": "library",
-          "version": "10.5.0"
+          "version": "11.12.0"
         }
       ]
     }
   },
   "version": 1,
-  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
-  "specVersion": "1.5"
+  "specVersion": "1.6"
 }
