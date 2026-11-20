@@ -8,6 +8,7 @@ from secure_ai_research.compliance.evidence import (
     Citations,
     missing_files,
     parse_evidence_matrix,
+    skip_marked_nodes,
     uncollectable_nodes,
 )
 
@@ -51,3 +52,35 @@ def test_uncollectable_nodes_flags_absent_node(tmp_path):
 
 def test_uncollectable_nodes_empty_input():
     assert uncollectable_nodes([], Path(".")) == []
+
+
+def test_skip_marked_nodes_flags_skip_and_xfail_but_not_skipif_or_plain(tmp_path):
+    # A cited test disabled with @skip/@xfail collects (linter green) and never fails the
+    # suite (CI green) while exercising nothing — silent stale evidence. Flag it.
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_marks.py").write_text(
+        "import pytest\n\n"
+        "@pytest.mark.skip(reason='disabled')\n"
+        "def test_skipped():\n    assert True\n\n"
+        "@pytest.mark.xfail\n"
+        "def test_xf():\n    assert False\n\n"
+        "@pytest.mark.skipif(False, reason='env gate')\n"
+        "def test_skipif():\n    assert True\n\n"
+        "def test_ok():\n    assert True\n",
+        encoding="utf-8",
+    )
+    nodes = [
+        "tests/test_marks.py::test_skipped",
+        "tests/test_marks.py::test_xf",
+        "tests/test_marks.py::test_skipif",  # env gate — legitimate, not flagged
+        "tests/test_marks.py::test_ok",
+    ]
+    assert skip_marked_nodes(nodes, tmp_path) == [
+        "tests/test_marks.py::test_skipped",
+        "tests/test_marks.py::test_xf",
+    ]
+
+
+def test_skip_marked_nodes_empty_input():
+    assert skip_marked_nodes([], Path(".")) == []

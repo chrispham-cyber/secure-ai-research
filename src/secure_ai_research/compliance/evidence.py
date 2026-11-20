@@ -81,3 +81,48 @@ def _collect_ok(nodes: list[str], repo_root: Path) -> bool:
         text=True,
     )
     return proc.returncode == 0
+
+
+_SKIP_MARK = re.compile(r"\bpytest\.mark\.(?:skip|xfail)\b")
+
+
+def skip_marked_nodes(nodes: Iterable[str], repo_root: Path) -> list[str]:
+    """Return the cited nodes disabled with ``@pytest.mark.skip``/``xfail``, sorted.
+
+    Collection plus the suite miss one case: a cited test disabled with ``@skip``/``@xfail`` still
+    collects (so :func:`uncollectable_nodes` stays clean) and never fails the suite, yet exercises
+    nothing — the control's evidence has gone stale silently. A static scan of each cited test's
+    decorator block closes that hole. ``skipif`` (a legitimate environment gate) is not flagged.
+    """
+    flagged: list[str] = []
+    for node in nodes:
+        file_part, _, test_part = node.partition("::")
+        func = test_part.split("[", 1)[0]  # drop any parametrize suffix
+        try:
+            lines = (repo_root / file_part).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue  # a missing/unreadable file is uncollectable_nodes' job, not this one
+        idx = _def_line(lines, func)
+        if idx is None:
+            continue
+        j = idx - 1
+        while j >= 0:  # walk the contiguous decorator block directly above the def
+            stripped = lines[j].strip()
+            if stripped.startswith("@"):
+                if _SKIP_MARK.search(lines[j]):
+                    flagged.append(node)
+                    break
+                j -= 1
+            elif stripped == "":
+                j -= 1
+            else:
+                break
+    return sorted(flagged)
+
+
+def _def_line(lines: list[str], func: str) -> int | None:
+    needle = f"def {func}("
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith(needle):
+            return i
+    return None
