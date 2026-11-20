@@ -21,7 +21,7 @@ name: secure-ai-research
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
     environment:
       POSTGRES_USER: ${SAIR_DB_USER:-sair}
       POSTGRES_PASSWORD: ${SAIR_DB_PASSWORD:-sair}
@@ -37,8 +37,10 @@ services:
       retries: 5
 
   minio:
-    # Pinned, not :latest (supply-chain posture). Tags chosen offline — run
-    # `docker compose pull` once to confirm they resolve, or bump to current stable.
+    # Digest-pin blocked: this image was retired from public registries (see Slice 3),
+    # so the tag no longer resolves to a manifest and cannot be @sha256-pinned. Tag-only;
+    # allowlisted in tests/test_compose_pinning.py. Swap to a maintained S3 image
+    # (SeaweedFS / Garage / localstack) to re-enable digest pinning.
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     command: server /data --console-address ":9001"
     environment:
@@ -56,7 +58,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.3.6
+    image: ollama/ollama:0.3.6@sha256:81e9822fecf86855bf74ede92c33456a0d1f9b034864cb3eaa379fb0361b6daf
     # Published on loopback only; the app reaches Ollama over the compose network
     # at http://ollama:11434. Host access (127.0.0.1) is for `ollama` CLI / debugging.
     ports:
@@ -96,7 +98,7 @@ services:
       retries: 5
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858
     # --import-realm loads every *-realm.json under /opt/keycloak/data/import on boot.
     # Import is idempotent: an already-present realm is skipped, so restarts are clean.
     command: start-dev --import-realm
@@ -111,7 +113,7 @@ services:
     profiles: ["identity"]
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.104.0
+    image: otel/opentelemetry-collector-contrib:0.104.0@sha256:e07e325e303e86f4a87a617491e921b579a92da6d404007394757ac910bf9587
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./infrastructure/otel/collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
