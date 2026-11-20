@@ -33,21 +33,33 @@ def _normalize(name: str) -> str:
 
 
 def pinned_requirements(requirements_path: Path) -> set[str]:
-    """Normalized distribution names pinned (``name==version``) in a requirements lock.
+    """Normalized distribution names required in a requirements lock.
 
-    Skips blank lines, comments, ``-r``/``-c``/``-e`` includes, ``--hash=`` continuation lines,
-    and environment markers (``; python_version ...``). An optional ``[extras]`` suffix is
-    dropped before normalization.
+    Recognizes ``name==version``, PEP 508 direct references (``name @ url``), and
+    editable/VCS installs carrying ``#egg=<name>``. Skips blank lines, comments,
+    ``-r``/``-c`` includes, ``--hash=``/index option lines, and environment markers
+    (``; python_version ...``). An optional ``[extras]`` suffix is dropped before
+    normalization.
     """
     names: set[str] = set()
     for raw in Path(requirements_path).read_text(encoding="utf-8").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("-"):
+            # -e/--editable VCS or path installs carry the name in "#egg=<name>";
+            # every other option line (-r/-c/--hash/--index-url) is not a dependency.
+            egg = re.search(r"#egg=([A-Za-z0-9._-]+)", line)
+            if egg:
+                names.add(_normalize(egg.group(1)))
             continue
         spec = line.split(";", 1)[0].strip()  # drop environment marker
-        if "==" not in spec:
+        if "==" in spec:
+            name = spec.split("==", 1)[0]
+        elif "@" in spec:
+            name = spec.split("@", 1)[0]  # PEP 508 direct reference: name @ url
+        else:
             continue
-        name = spec.split("==", 1)[0].strip()
         name = name.split("[", 1)[0].strip()  # drop [extras]
         if name:
             names.add(_normalize(name))
@@ -73,7 +85,13 @@ def canonical_components(sbom_bytes: bytes) -> list[dict]:
 
 
 def sbom_digest(sbom_bytes: bytes) -> str:
-    """SHA-256 hexdigest of the canonical component projection."""
+    """SHA-256 hexdigest of the canonical component projection.
+
+    Scope is deliberate: this pins the dependency set (name/version/purl) for
+    drift detection, not the whole SBOM file -- git provides whole-file integrity
+    for the committed ``sbom/`` artifacts, and widening into volatile fields
+    (license, externalReferences) would flap the gate on benign tool output.
+    """
     canonical = json.dumps(canonical_components(sbom_bytes), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

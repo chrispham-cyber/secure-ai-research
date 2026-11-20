@@ -59,6 +59,17 @@ def test_pinned_requirements_ignores_noise(tmp_path):
     assert pinned_requirements(lock) == {"fastapi", "anyio", "httpx", "pkg"}
 
 
+def test_pinned_requirements_counts_direct_references(tmp_path):
+    lock = tmp_path / "r.txt"
+    lock.write_text(
+        "fastapi==0.163.2\n"
+        "mypkg @ https://example.com/mypkg-1.0-py3-none-any.whl\n"
+        "-e git+https://github.com/x/OtherMod.git#egg=OtherMod\n"
+        "--index-url https://pypi.org/simple\n"
+    )
+    assert pinned_requirements(lock) == {"fastapi", "mypkg", "othermod"}
+
+
 def test_canonical_components_is_order_independent():
     rev = json.dumps({"components": list(reversed(json.loads(_SBOM)["components"]))}).encode()
     assert canonical_components(_SBOM) == canonical_components(rev)
