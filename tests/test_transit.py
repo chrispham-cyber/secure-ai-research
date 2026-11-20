@@ -25,9 +25,7 @@ def test_sslmode_require_clears_pgvector_warning():
 
 
 def test_non_loopback_minio_without_tls_warns():
-    s = Settings(
-        object_store="minio", minio_endpoint="minio.example.com:9000", minio_secure=False
-    )
+    s = Settings(object_store="minio", minio_endpoint="minio.example.com:9000", minio_secure=False)
     assert check_transit_posture(s) != []
 
 
@@ -45,6 +43,28 @@ def test_sslmode_verify_full_counts_as_tls():
 def test_ipv6_loopback_minio_has_no_warning():
     s = Settings(object_store="minio", minio_endpoint="[::1]:9000", minio_secure=False)
     assert check_transit_posture(s) == []
+
+
+def test_sslmode_prefer_does_not_count_as_tls():
+    # libpq's default 'prefer' (and 'allow') silently fall back to plaintext; a posture gate must
+    # not bless them as TLS — only require/verify-ca/verify-full guarantee an encrypted link.
+    s = Settings(
+        vector_store="pgvector",
+        db_url="postgresql://u:p@db.example.com:5432/x",
+        db_sslmode="prefer",
+    )
+    assert check_transit_posture(s) != []
+
+
+def test_dsn_sslmode_disable_overrides_knob_and_warns():
+    # apply_sslmode lets a DSN's own sslmode= win over the knob, so the gate must read the same
+    # value — else it blesses a plaintext ('disable') link because the knob says 'require'.
+    s = Settings(
+        vector_store="pgvector",
+        db_url="postgresql://u:p@db.example.com:5432/x?sslmode=disable",
+        db_sslmode="require",
+    )
+    assert check_transit_posture(s) != []
 
 
 def test_apply_sslmode_appends_when_absent_and_preserves_when_present():
