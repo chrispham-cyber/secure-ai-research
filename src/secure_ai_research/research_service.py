@@ -226,6 +226,20 @@ class ResearchService:
                 f"fetch_error: generation failed ({type(exc).__name__})",
             )
             return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            # Defense in depth, mirroring the injected-fetcher path: a generator is injected code
+            # (Protocol/factory), so any failure OTHER than the typed GeneratorError — a urllib
+            # ValueError from a misconfigured host scheme, a bug in a third-party generator — must
+            # still become FETCH_ERROR with exactly one audit record, never an unhandled 500 that
+            # leaves no audit trail. Only the exception type is recorded (no payload leak).
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: generation failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
 
         # Audit identity comes from the active generator (honest attribution). JoinGenerator
         # reports retrieval-only/""/"" ⇒ the default record is byte-identical to pre-change.

@@ -69,7 +69,8 @@ class OllamaGenerator:
             raw = self._post(body)
         except GeneratorError:
             raise
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            # ValueError covers urllib's bare "unknown url type" for a scheme-less/unknown host.
             raise GeneratorError(f"ollama request failed ({type(exc).__name__})") from exc
 
         try:

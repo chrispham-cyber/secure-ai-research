@@ -138,3 +138,44 @@ def test_generator_failure_is_fetch_error(tmp_path):  # design §10 Q1 — fail-
     assert res.outcome is Outcome.FETCH_ERROR
     assert res.answer == ""
     assert len(read_records(tmp_path / "a.jsonl")) == 1
+
+
+class _BrokenGen:
+    """Fails with a non-GeneratorError (e.g. a urllib ValueError from a bad host scheme)."""
+
+    def generate(self, prompt: str, passages) -> str:
+        raise ValueError("unknown url type: 'localhost'")
+
+
+class _AdversarialGen:
+    """Emits an uncited line, a forged-citation line, and a valid-id + invented-text line."""
+
+    def generate(self, prompt: str, passages) -> str:
+        return (
+            "Ungrounded assertion with no citation at all\n"
+            "Forged finding [CVE-9999-9999]\n"
+            "Totally invented remote exploit [CVE-2099-0001]"
+        )
+
+
+def test_generator_non_generator_error_is_fetch_error(tmp_path):  # review: defense-in-depth invariant
+    # A generator failing with anything OTHER than GeneratorError must STILL become FETCH_ERROR
+    # with exactly one audit record — never an unhandled 500 that leaves no audit trail (mirrors
+    # the injected-fetcher path's `except Exception`). Here the failure is a bare ValueError.
+    svc = _mini_service(tmp_path, _BrokenGen())
+    res = svc.research_cve(_TARGET, role="research_analyst")
+    assert res.outcome is Outcome.FETCH_ERROR
+    assert res.answer == ""
+    assert len(read_records(tmp_path / "a.jsonl")) == 1
+
+
+def test_adversarial_generator_output_never_survives(tmp_path):  # spec anti-goal A1, end-to-end
+    # Enforcement runs through build_report on the service's answer: an uncited line, a forged
+    # (non-retrieved) citation, and a valid-id-but-invented claim must all be dropped.
+    svc = _mini_service(tmp_path, _AdversarialGen())
+    res = svc.research_cve(_TARGET, role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert "Ungrounded assertion" not in res.answer
+    assert "CVE-9999-9999" not in res.answer
+    assert "Totally invented remote exploit" not in res.answer
+    assert "No cited findings." in res.answer

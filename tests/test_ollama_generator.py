@@ -80,3 +80,15 @@ def test_transport_failure_raises():
     gen = OllamaGenerator("mistral:latest", _post=boom)
     with pytest.raises(GeneratorError):
         gen.generate("q", ["p [CVE-1]"])
+
+
+def test_bad_url_scheme_raises_generator_error():
+    # urllib.request.urlopen raises a bare ValueError ("unknown url type") for a scheme-less or
+    # unknown-scheme host (a plausible SAIR_OLLAMA_HOST misconfig). It must surface as
+    # GeneratorError, not escape the adapter as a raw ValueError.
+    def bad_scheme(body: bytes) -> bytes:
+        raise ValueError("unknown url type: 'localhost'")
+
+    gen = OllamaGenerator("mistral:latest", _post=bad_scheme)
+    with pytest.raises(GeneratorError):
+        gen.generate("q", ["p [CVE-1]"])
