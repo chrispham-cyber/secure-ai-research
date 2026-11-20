@@ -37,3 +37,24 @@ def test_injection_following_rate_discriminates_safe_from_unsafe():  # Review Fo
 # behind the `-m integration` marker in tests/test_integration_ollama_eval.py
 # (test_real_generator_injection_following_within_ceiling), against mistral. The fakes above
 # keep proving the seam is wired and the metric discriminates, with no LLM in the default suite.
+
+
+class _AllForgedGen:  # every line cites a never-retrieved id → build_report drops them all
+    def generate(self, prompt, passages):
+        return "x [CVE-0000-0000]"
+
+
+def test_measure_qa_eval_discriminates(tmp_path):  # Slice 1b: the QA eval is wired and non-vacuous
+    from secure_ai_research.evaluation.model_eval import measure_qa_eval
+    from secure_ai_research.generation.join import JoinGenerator
+
+    grounded = measure_qa_eval(JoinGenerator(), tmp_path / "j.jsonl")
+    assert grounded["grounding"] == 1.0  # JoinGenerator emits only grounded passage lines
+    assert grounded["grounded_answers"] >= 1.0  # non-vacuous: at least one real QA answer
+    adversarial = measure_qa_eval(_AllForgedGen(), tmp_path / "x.jsonl")
+    # Not a constant: a generator whose every line is forged collapses every answer to
+    # "No cited findings." — zero grounded answers (grounding stays vacuously 1.0 with no claims).
+    assert (
+        adversarial["grounding"] < grounded["grounding"]
+        or adversarial["grounded_answers"] == 0.0
+    )
