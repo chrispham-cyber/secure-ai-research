@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Phases 2–5 of the [roadmap](ROADMAP.md): the platform grew from the Phase-1 scaffold into a
+complete, tested, evidence-grounded pipeline with its security controls and assurance
+artifacts in place. Public/synthetic data only; version intentionally held at `0.1.0`.
+
+### Added
+- **Evidence-grounded RAG (Phase 2).** Chunking, embeddings (deterministic `HashingEmbedder`
+  default), vector store (in-memory default + opt-in pgvector), and the research endpoints —
+  `GET /research/cve/{cve_id}`, `GET /research/attack/{technique_id}`, `POST /research/search`,
+  `POST /research/ask`; answers cite their retrieved sources, with authorization enforced
+  before retrieval.
+- **AI-specific security (Phase 3).** SHA-256 model-integrity verifier, a prompt-injection
+  robustness harness, and agent authority checks enforced outside the LLM.
+- **Evaluation & red-teaming (Phase 4).** Retrieval/answer-grounding metrics, a synthetic
+  benchmark harness, and a scored red-team / injection suite.
+- **Deploy & assurance (Phase 5).** Signed-token (OIDC/JWT) identity retiring the dev
+  `X-Role` header in prod; a tamper-evident audit log (SHA-256 hash-chain + HMAC); an opt-in
+  at-rest cipher seam (`NullCipher` default, Fernet behind `[crypto]`); a reproducible
+  CycloneDX SBOM with a SHA-256 integrity manifest; and the assurance docs — STRIDE threat
+  model, NIST control→evidence matrix, risk register, and system security plan.
+
+### Security
+- Opt-in `SAIR_*` seams keep the default path deterministic, offline, and dependency-free;
+  all published ports bind to `127.0.0.1`; a fail-closed secret gate refuses boot on weak
+  prod secrets.
+
 ## [0.1.0] — 2026-11-18
 
 Initial starter scaffold (Phase-1 foundation). Public/synthetic data only; not

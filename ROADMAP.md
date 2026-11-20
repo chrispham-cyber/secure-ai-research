@@ -7,7 +7,8 @@ evaluated, and hardened evidence-grounded AI research assistant.
 > see [architecture/trust-boundaries.md](architecture/trust-boundaries.md).
 
 Each phase lists its **objective**, **weekly tasks**, and **deliverables**. Checkboxes
-track progress; Phase 1 is largely complete in this starter repo.
+track progress; Phases 1–5 are built — the deterministic, offline default path is complete
+end to end, with live infrastructure behind opt-in seams.
 
 ---
 
