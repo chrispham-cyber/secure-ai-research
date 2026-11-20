@@ -64,7 +64,7 @@ def load(raw: bytes) -> list[IngestedDocument]:
             source_url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",  # type: ignore[arg-type]
             integrity_hash=integrity_hash,
         )
-        documents.append(IngestedDocument(document=document, text=text))
+        documents.append(IngestedDocument(document=document, text=text, canonical=canonical))
     return documents
 
 

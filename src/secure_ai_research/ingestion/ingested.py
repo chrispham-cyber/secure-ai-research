@@ -15,7 +15,13 @@ from secure_ai_research.ingestion.schema import ResearchDocument
 
 @dataclass(frozen=True)
 class IngestedDocument:
-    """A :class:`ResearchDocument` together with the text to index for it."""
+    """A :class:`ResearchDocument` together with the text to index for it.
+
+    ``canonical`` carries the exact source bytes the loader hashed for
+    ``document.integrity_hash`` (empty only for records built outside a loader), so the object
+    store can durably retain the raw provenance payload behind every hash. See Slice 3.
+    """
 
     document: ResearchDocument
     text: str
+    canonical: bytes = b""

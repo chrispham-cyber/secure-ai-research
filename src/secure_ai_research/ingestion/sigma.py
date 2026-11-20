@@ -73,7 +73,7 @@ def load(raw: bytes) -> list[IngestedDocument]:
             source_url=_REPO_URL,  # type: ignore[arg-type]
             integrity_hash=integrity_hash,
         )
-        documents.append(IngestedDocument(document=document, text=_text(rule)))
+        documents.append(IngestedDocument(document=document, text=_text(rule), canonical=canonical))
     return documents
 
 

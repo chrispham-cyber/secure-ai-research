@@ -55,7 +55,9 @@ def load(raw: bytes) -> list[IngestedDocument]:
             source_url=_CATALOG_URL,  # type: ignore[arg-type]
             integrity_hash=integrity_hash,
         )
-        documents.append(IngestedDocument(document=document, text=_text(cve_id, entry)))
+        documents.append(
+            IngestedDocument(document=document, text=_text(cve_id, entry), canonical=canonical)
+        )
     return documents
 
 
