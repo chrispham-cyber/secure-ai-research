@@ -2,9 +2,10 @@
 
 Deterministic metrics over the REAL pipeline's output (carried in an ``EvalResult``): they
 measure the **pipeline** — how well its cited answers are grounded, how accurate its
-citations are, and whether it refused when it should — not a model. In posture there is no
-generation step; model-behavior metrics (does a generator follow injected instructions, does
-it hallucinate) live behind the Phase-4 ``Generator`` seam and are deferred.
+citations are, and whether it refused when it should — not a model. Raw model-behavior metrics
+(does a generator follow injected instructions, hallucinate, or wrongly refuse) live in
+``evaluation.model_eval`` and gate a scripted baseline in CI (SAIR follow-up #3);
+:func:`grounded_line_counts` below is the groundedness primitive shared with them.
 
 "uncited answers score zero": a claim line with no citation is counted and scores zero, never
 silently skipped.
@@ -21,10 +22,13 @@ def grounded_line_counts(answer: str, retrieved: set[str]) -> tuple[int, int]:
     """``(claim_lines, grounded_lines)`` over an answer body.
 
     The shared line-classification that both :func:`grounding` and the raw-model hallucination
-    metric use, so neither can drift from ``build_report``'s drop rule. The report's title, the
-    ``Sources:`` line, blank lines, and ``No cited findings.`` are structural, not claims. A
-    claim line is *grounded* iff it carries at least one citation and every cited id is in
-    ``retrieved``.
+    metric use, so neither drifts from ``build_report``'s **citation-grounding** rule. This models
+    build_report's citation-membership test only — NOT its faithfulness-overlap floor — so a line
+    counted grounded here can still be dropped by ``build_report``; callers that rely on that gap
+    (the raw-hallucination metric is a lower bound on build_report's drops) document it. The
+    report's title, the ``Sources:`` line, blank lines, and ``No cited findings.`` are structural,
+    not claims. A claim line is *grounded* iff it carries at least one citation and every cited id
+    is in ``retrieved``.
     """
     claims = 0
     grounded = 0

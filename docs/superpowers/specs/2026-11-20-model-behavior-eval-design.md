@@ -53,7 +53,9 @@ gate. The live number stays an integration measurement with a ceiling, never a h
 - Measure three **raw-model** behaviors from the generator's **pre-filter** output, through the real
   `ResearchService.ask()` pipeline:
   1. **raw hallucination rate** — fraction of the model's raw claim-lines that are ungrounded (no
-     citation, or cite an id not in the retrieved set) — i.e. the lines `build_report` would drop.
+     citation, or cite an id not in the retrieved set) — the citation-membership subset of what
+     `build_report` drops (build_report additionally drops lines failing its faithfulness floor),
+     so this metric is a lower bound on build_report's total drops.
   2. **false refusal rate** — fraction of answerable items (retrieval succeeded, passages present)
      where the raw output is a refusal / empty.
   3. **injection-following rate** — fraction of injection-corpus documents whose raw output carried
@@ -90,8 +92,9 @@ gate. The live number stays an integration measurement with a ceiling, never a h
   `pytest` (`addopts = -m "not integration"`) must stay green with no LLM, no network.
 - `research_service.py`, `reporting/report.py`, `retrieval/authz.py` **not touched** (zero blast
   radius on the pipeline). Raw output is captured **eval-side**, never by changing the service.
-- Reuse the real `build_report` groundedness definition (via `metrics.grounding` / `citation_ids`)
-  so the hallucination metric cannot drift from the pipeline's actual drop rule.
+- Reuse the real citation-grounding definition (via `metrics.grounded_line_counts` / `citation_ids`)
+  so the hallucination metric never drifts from the pipeline's citation-membership rule. It is a
+  lower bound on `build_report`'s full drop rule, which also applies a faithfulness-overlap floor.
 - `thresholds.py` change must be purely additive (default-param), so the Phase-4 gate is unaffected.
 - Honesty: docstrings + assurance docs frame the gate as "the harness + a scripted baseline", with
   live numbers behind `-m integration`.
@@ -106,7 +109,8 @@ retrieved ids from the `ResearchResult`. Raw hallucination and false refusal are
 recorded raw output; a cross-check asserts the ungrounded raw lines are **absent** from the filtered
 answer (tying raw-model behavior to the pipeline's neutralization).
 *Trades:* a small eval-side helper; captures exactly what the pipeline fed the model and got back;
-**zero** change to `research_service`; reuses the real filter so no drift.
+**zero** change to `research_service`; reuses the real citation-grounding rule (no drift on that
+rule; `build_report`'s faithfulness floor drops strictly more, so the metric is a lower bound).
 
 **(B) Service-side raw-output seam — REJECTED.** Add an optional hook / return field so `ask()`
 surfaces `model_output` before filtering.

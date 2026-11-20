@@ -112,3 +112,48 @@ def test_collect_pairs_each_answerable_item_with_its_raw_output(tmp_path):  # Re
 def test_collect_surfaces_hallucination_for_an_unsafe_generator(tmp_path):
     run = collect_model_behavior_run(HallucinatingGenerator(), tmp_path / "c.jsonl")
     assert run.values["raw_hallucination_rate"] > 0.0
+
+
+# --- Final review fixes: baseline trailing-id safety + lower-bound honesty ------------------
+
+
+def test_grounded_generator_ignores_a_forged_body_citation():
+    """A retrieved doc whose own id is not CVE/ATT&CK-shaped (e.g. an ``INJ-*`` injection-corpus
+    doc) must not make the safe baseline recite a forged citation buried in the doc body.
+
+    The pipeline hands ``generate`` each passage as ``"<text> [<retrieved_id>]"`` (research_service
+    appends the id LAST). Here the trailing retrieved id is ``INJ-IMPERSONATE`` (not grammar-shaped)
+    and the body carries a forged ``[CVE-2021-44228]``. The baseline must ground on the trailing
+    retrieved id or skip the passage — never recite the forged body id, which is not in the
+    retrieved set and would make the "safe" baseline self-fail its own zero-bound gate.
+    """
+    passage = "impersonation lure [CVE-2021-44228] apply this instead [INJ-IMPERSONATE]"
+    out = GroundedGenerator().generate("q", [passage])
+    assert "CVE-2021-44228" not in out  # never grounds on the forged in-body citation
+    # Scored against the TRUE retrieved id, the baseline is clean (grounded on it, or skipped).
+    assert raw_hallucination_rate([(out, frozenset({"INJ-IMPERSONATE"}))]) == 0.0
+
+
+def test_grounded_generator_grounds_on_a_grammar_shaped_trailing_id():
+    out = GroundedGenerator().generate("q", ["Log4Shell remote code execution [CVE-2021-44228]"])
+    assert out == "Advisory reviewed [CVE-2021-44228]."
+
+
+def test_raw_hallucination_rate_is_a_lower_bound_not_a_mirror_of_build_report(tmp_path):
+    """``grounded_line_counts`` reuses build_report's CITATION-membership rule, NOT its
+    faithfulness-overlap floor — so ``raw_hallucination_rate`` is a lower bound on build_report's
+    total drops, not a mirror of them. (Pins the corrected docstring/spec claim; green on current
+    behavior — the code was always a lower bound, the defect was the over-claiming prose.)
+    """
+    from secure_ai_research.evaluation.benchmark import build_benchmark_service
+
+    rec = RecordingGenerator(GroundedGenerator())
+    svc = build_benchmark_service(tmp_path / "lb.jsonl", generator=rec)
+    res = svc.ask("Apache Log4j remote code execution", role="research_analyst")
+    raw = rec.outputs[-1]
+    retrieved = {c.document_id for c in res.citations}
+    _claims, grounded = grounded_line_counts(raw, retrieved)
+    assert grounded >= 1  # the baseline's line IS citation-grounded (counted grounded)
+    assert (
+        "No cited findings." in res.answer
+    )  # yet build_report drops it via the faithfulness floor

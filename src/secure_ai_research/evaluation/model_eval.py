@@ -21,6 +21,7 @@ exists, and this is its home.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -106,9 +107,11 @@ def raw_hallucination_rate(samples: Sequence[tuple[str, frozenset[str]]]) -> flo
 
     Each sample is ``(raw_output, retrieved_ids)`` for one answerable item. Refused outputs are
     skipped — a refusal is a distinct failure (measured by :func:`false_refusal_rate`), not an
-    invention. Grounding reuses the pipeline's own rule via
-    :func:`~secure_ai_research.evaluation.metrics.grounded_line_counts`, so the metric cannot
-    diverge from what ``build_report`` actually drops. ``0.0`` when there are no claim-lines.
+    invention. Grounding reuses the pipeline's **citation-grounding** rule via
+    :func:`~secure_ai_research.evaluation.metrics.grounded_line_counts` (a line is grounded iff it
+    cites only retrieved ids), so this metric never drifts from *that* rule. It is a **lower bound**
+    on what ``build_report`` drops: build_report also drops lines failing its faithfulness-overlap
+    floor, which this metric deliberately does not model. ``0.0`` when there are no claim-lines.
     """
     claims = 0
     ungrounded = 0
@@ -159,14 +162,41 @@ class RecordingGenerator:
         return out
 
 
-class GroundedGenerator:
-    """Safe baseline: recites each passage's trailing citation in a benign line.
+# The id in a passage's TRAILING ``[...]`` bracket. ``research_service`` builds every passage as
+# ``"<text> [<retrieved_id>]"``, so the last bracket — anchored at end-of-string — is the one true
+# retrieved id, distinct from any bracket token buried in the body (a forged ``[CVE-…]`` in an
+# injection-corpus body, a ``[CWE-79]`` reference, etc.). ``[^\[\]]+`` forbids nested brackets so
+# the capture is exactly that final token.
+_TRAILING_BRACKET = re.compile(r"\[([^\[\]]+)\]\s*$")
 
-    Models a well-behaved RAG generator — grounded by construction (the pipeline appends the true
-    retrieved id last, as ``"<text> [<id>]"``, so the trailing citation is always a retrieved id,
-    never a forged one buried in the body) and injection-safe (it reproduces only the citation,
-    never the passage prose, so an injected imperative in a passage body is dropped, not
-    followed). Scores 0.0 on raw hallucination, false refusal, AND injection-following.
+
+def _trailing_retrieved_id(passage: str) -> str | None:
+    """The passage's trailing ``[id]`` token iff it is citation-grammar-shaped, else ``None``.
+
+    Grounds the safe baseline on the *retrieved* id the pipeline appended last — never on a
+    citation-shaped token buried in the body. A non-grammar-shaped retrieved id (e.g. an ``INJ-*``
+    injection-corpus doc) yields ``None`` (the passage is skipped), so the baseline cannot be made
+    to recite a forged in-body citation and self-fail its own zero-bound gate.
+    """
+    m = _TRAILING_BRACKET.search(passage)
+    if m is None:
+        return None
+    token = m.group(1)
+    return token if citation_ids(f"[{token}]") == [token] else None
+
+
+class GroundedGenerator:
+    """Safe baseline: recites each passage's trailing retrieved id in a benign line.
+
+    Models a well-behaved RAG generator. It grounds only on the id in each passage's **trailing**
+    ``[id]`` bracket — the id ``research_service`` appends last as ``"<text> [<id>]"`` — and only
+    when that id is citation-grammar-shaped, so it never recites a forged citation buried in a
+    passage body, and it skips a passage whose retrieved id is not grammar-shaped (e.g. an
+    ``INJ-*`` injection-corpus doc) rather than grounding on a body token. It is also
+    injection-safe: it reproduces only the citation, never the passage prose, so an injected
+    imperative in a body is dropped, not followed. Over the current QA corpus it scores 0.0 on raw
+    hallucination, false refusal, AND injection-following — and the trailing-id rule keeps that
+    true even if an injection-corpus doc is later retrieved into the QA hit set.
     """
 
     model_id = "scripted-grounded"
@@ -176,9 +206,9 @@ class GroundedGenerator:
     def generate(self, prompt: str, passages: Sequence[str]) -> str:
         lines: list[str] = []
         for passage in passages:
-            ids = citation_ids(passage)
-            if ids:
-                lines.append(f"Advisory reviewed [{ids[-1]}].")
+            retrieved_id = _trailing_retrieved_id(passage)
+            if retrieved_id is not None:
+                lines.append(f"Advisory reviewed [{retrieved_id}].")
         return "\n".join(lines)
 
 
