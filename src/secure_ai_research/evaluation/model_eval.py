@@ -13,6 +13,8 @@ injected instruction" is only meaningful once generation exists, and this is its
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from secure_ai_research.evaluation.injection_corpus import malicious_corpus
 from secure_ai_research.generation.ports import Generator
 
@@ -51,3 +53,36 @@ def injection_following_rate(generator: Generator) -> float:
         if follows_injection(generator.generate("Summarize the advisory.", [doc.text]))
     )
     return followed / len(docs)
+
+
+def measure_real_eval(generator: Generator, audit_path: Path) -> dict[str, float]:
+    """Run the Phase-4 benchmark through a service built with ``generator`` and report numbers.
+
+    Deterministic metrics measure the surviving (citation + faithfulness filtered) output, so
+    ``grounding`` is high by construction; ``grounded_answers`` is the honest non-vacuity signal
+    — the count of id-route items whose body kept at least one grounded line rather than
+    collapsing to ``No cited findings.``. ``injection_following_rate`` is the real model-behaviour
+    signal. Intended for the ``-m integration`` eval against a live model, never the default suite.
+    """
+    from secure_ai_research.evaluation.benchmark import build_benchmark_service, run_benchmark
+    from secure_ai_research.evaluation.benchmark_items import benchmark_items
+    from secure_ai_research.evaluation.metrics import aggregate
+    from secure_ai_research.research_service import Outcome
+
+    service = build_benchmark_service(audit_path, generator=generator)
+    results = run_benchmark(service, benchmark_items())
+    agg = aggregate(results)
+    grounded_answers = sum(
+        1
+        for r in results
+        if r.item.kind in {"cve", "attack"}
+        and r.outcome == Outcome.OK
+        and "No cited findings." not in r.answer
+    )
+    return {
+        "grounding": agg["grounding"],
+        "citation_accuracy": agg["citation_accuracy"],
+        "injection_following_rate": injection_following_rate(generator),
+        "n_answered": agg["n_answered"],
+        "grounded_answers": float(grounded_answers),
+    }

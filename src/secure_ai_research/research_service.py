@@ -22,6 +22,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from secure_ai_research.audit.record import ResearchRecord, emit
+from secure_ai_research.generation.join import JoinGenerator
+from secure_ai_research.generation.ports import Generator, GeneratorError
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import ResearchDocument
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
@@ -65,6 +67,7 @@ class ResearchService:
         limit: int = 5,
         *,
         fetch_missing: Callable[[str], list[IngestedDocument]] | None = None,
+        generator: Generator | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
@@ -72,6 +75,9 @@ class ResearchService:
         self._audit_path = audit_path
         self._limit = limit
         self._fetch_missing = fetch_missing
+        # Default = JoinGenerator: output byte-identical to the pre-seam id-route, so the
+        # deterministic suite and the Phase-4 1.0 gate are unchanged with no real generator.
+        self._generator = generator or JoinGenerator()
         self._docs: dict[str, ResearchDocument] = {}
         self._lock = threading.Lock()
 
@@ -202,7 +208,44 @@ class ResearchService:
         citations = [
             Citation(did, str(self._docs[did].source_url), first_text[did]) for did in ordered_ids
         ]
-        model_output = "\n".join(f"{hit.text} [{hit.document_id}]" for hit in hits)
+        # Synthesis seam. The default JoinGenerator reproduces the pre-seam string exactly;
+        # a configured real generator (Ollama) writes grounded prose over the same passages.
+        passages = [f"{hit.text} [{hit.document_id}]" for hit in hits]
+        gen = self._generator
+        try:
+            model_output = gen.generate(objective, passages)
+        except GeneratorError as exc:
+            # A real generator failed. Fail closed: one terminal audit record, FETCH_ERROR,
+            # never a silent fallback to a different generator, never a fabricated answer.
+            # Only the exception type is recorded, so a message payload cannot leak.
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: generation failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            # Defense in depth, mirroring the injected-fetcher path: a generator is injected code
+            # (Protocol/factory), so any failure OTHER than the typed GeneratorError — a urllib
+            # ValueError from a misconfigured host scheme, a bug in a third-party generator — must
+            # still become FETCH_ERROR with exactly one audit record, never an unhandled 500 that
+            # leaves no audit trail. Only the exception type is recorded (no payload leak).
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: generation failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+
+        # Audit identity comes from the active generator (honest attribution). JoinGenerator
+        # reports retrieval-only/""/"" ⇒ the default record is byte-identical to pre-change.
+        model_id = getattr(gen, "model_id", "retrieval-only")
+        model_version = getattr(gen, "model_version", "")
+        prompt_template_version = getattr(gen, "prompt_template_version", "")
 
         record = ResearchRecord(
             research_id=rid,
@@ -211,14 +254,20 @@ class ResearchService:
             objective=objective,
             data_source_ids=sorted({self._docs[did].source for did in ordered_ids}),
             document_hashes=[self._docs[did].integrity_hash for did in ordered_ids],
-            model_id="retrieval-only",
-            model_version="",
-            prompt_template_version="",
+            model_id=model_id,
+            model_version=model_version,
+            prompt_template_version=prompt_template_version,
             retrieved_doc_ids=ordered_ids,
             model_output=model_output,
-            conclusion="retrieval-only: assembled from cited passages",
+            conclusion=f"{model_id}: assembled from cited passages",
         )
-        answer = build_report(record)
+        # Faithfulness floor: build_report drops any surviving line whose claim does not
+        # overlap its cited passage text — catches a valid-id line with invented content.
+        # Deterministic lines ARE the passage (+id), so they overlap fully and are unaffected.
+        passages_by_id = {
+            did: [hit.text for hit in hits if hit.document_id == did] for did in ordered_ids
+        }
+        answer = build_report(record, passages_by_id)
         emit(record, self._audit_path)
         return ResearchResult(Outcome.OK, answer, citations, rid)
 

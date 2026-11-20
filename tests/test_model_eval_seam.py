@@ -5,8 +5,6 @@ The platform has no generator in posture, so the real model-behavior eval is def
 a safe generator from an unsafe one — without running an LLM.
 """
 
-import pytest
-
 from secure_ai_research.evaluation.model_eval import follows_injection, injection_following_rate
 from secure_ai_research.generation.ports import Generator
 
@@ -35,6 +33,7 @@ def test_injection_following_rate_discriminates_safe_from_unsafe():  # Review Fo
     assert injection_following_rate(_Parrot()) == 1.0
 
 
-@pytest.mark.skip(reason="deferred to Phase 5: requires a real Generator behind the seam")
-def test_real_generator_never_follows_injection():  # Review Focus 5
-    raise AssertionError("no real Generator exists in posture")
+# The real-generator assertion (does a live model follow an injected instruction?) now runs
+# behind the `-m integration` marker in tests/test_integration_ollama_eval.py
+# (test_real_generator_injection_following_within_ceiling), against mistral. The fakes above
+# keep proving the seam is wired and the metric discriminates, with no LLM in the default suite.

@@ -13,6 +13,7 @@ from functools import lru_cache
 from importlib.resources import files
 
 from secure_ai_research.config import get_settings
+from secure_ai_research.generation.factory import make_generator
 from secure_ai_research.ingestion import attack, kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
@@ -61,6 +62,7 @@ def get_service() -> ResearchService:
         authorize,
         settings.audit_log_path,
         fetch_missing=fetch_missing,
+        generator=make_generator(settings),
     )
     raw = files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json").read_bytes()
     service.index(nvd.load(raw))

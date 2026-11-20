@@ -9,6 +9,7 @@ is the source of truth; the report is a view over it.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,11 +33,54 @@ def citation_ids(text: str) -> list[str]:
     return _CITATION.findall(text)
 
 
-def build_report(record: ResearchRecord) -> str:
-    """Render ``record`` into a cited report, dropping uncited claims.
+_WORD = re.compile(r"[a-z0-9]+")
 
-    A claim line is kept only if it carries at least one ``[id]`` citation and
-    **every** id it cites is in ``record.retrieved_doc_ids``. With no surviving
+
+def _content_tokens(text: str) -> set[str]:
+    """Lowercased alphanumeric word tokens of ``text`` with citation tokens removed.
+
+    The shared ``[id]`` is stripped first, so a claim and its passage are not counted as
+    overlapping merely because both name the id being cited.
+    """
+    return set(_WORD.findall(_CITATION.sub(" ", text).lower()))
+
+
+def _is_faithful(
+    line: str, cited: list[str], passages: Mapping[str, Sequence[str]], min_overlap: float
+) -> bool:
+    """True if ``line``'s claim tokens overlap at least one cited passage by ``min_overlap``.
+
+    Overlap = |claim ∩ passage| / |claim|, maximized over the passages of the ids the line
+    cites. A line with no claim tokens (citation only) is vacuously faithful.
+    """
+    claim = _content_tokens(line)
+    if not claim:
+        return True
+    best = 0.0
+    for cid in cited:
+        for passage in passages.get(cid, ()):
+            passage_tokens = _content_tokens(passage)
+            if not passage_tokens:
+                continue
+            overlap = len(claim & passage_tokens) / len(claim)
+            best = max(best, overlap)
+    return best >= min_overlap
+
+
+def build_report(
+    record: ResearchRecord,
+    passages: Mapping[str, Sequence[str]] | None = None,
+    *,
+    min_overlap: float = 0.3,
+) -> str:
+    """Render ``record`` into a cited report, dropping uncited — and unfaithful — claims.
+
+    A claim line is kept only if it carries at least one ``[id]`` citation and **every** id it
+    cites is in ``record.retrieved_doc_ids``. When ``passages`` (id -> its retrieved passage
+    texts) is given, a surviving line is additionally dropped unless its claim tokens overlap at
+    least one cited passage by ``min_overlap`` — a lenient floor that targets wholesale
+    invention ("valid id + unsupported claim"), not paraphrase. ``passages=None`` disables the
+    faithfulness check, giving byte-identical output to the pre-floor renderer. With no surviving
     claims the body reads ``No cited findings.``.
     """
     allowed = set(record.retrieved_doc_ids)
@@ -46,8 +90,11 @@ def build_report(record: ResearchRecord) -> str:
         if not line:
             continue
         cited = citation_ids(line)
-        if cited and all(cid in allowed for cid in cited):
-            kept.append(line)
+        if not (cited and all(cid in allowed for cid in cited)):
+            continue
+        if passages is not None and not _is_faithful(line, cited, passages, min_overlap):
+            continue
+        kept.append(line)
     body = "\n".join(kept) if kept else "No cited findings."
     sources = ", ".join(record.retrieved_doc_ids)
     return f"# Research report: {record.objective}\n\n{body}\n\nSources: {sources}"
