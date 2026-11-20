@@ -22,6 +22,7 @@ from secure_ai_research.evaluation.benchmark_items import benchmark_items
 from secure_ai_research.evaluation.injection_corpus import malicious_corpus
 from secure_ai_research.evaluation.metrics import aggregate
 from secure_ai_research.evaluation.records import EvalItem, EvalResult
+from secure_ai_research.generation.ports import Generator
 from secure_ai_research.ingestion import attack, kev, nvd, sigma
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import (
@@ -67,18 +68,23 @@ def _restricted_doc() -> IngestedDocument:
     return IngestedDocument(document=document, text=text)
 
 
-def build_benchmark_service(audit_path: Path) -> ResearchService:
+def build_benchmark_service(
+    audit_path: Path, generator: Generator | None = None
+) -> ResearchService:
     """Return an offline ``ResearchService`` with the full benchmark corpus indexed.
 
     Same wiring as the production default (``HashingEmbedder`` + in-memory store + the
     deny-by-default ``authorize`` gate) but with **no** ``fetch_missing`` callable, so the
-    service is fully offline and deterministic.
+    service is fully offline and deterministic. ``generator`` defaults to ``None`` ⇒ the
+    deterministic ``JoinGenerator``, so the benchmark stays reproducible and the Phase-4 1.0
+    gate is unchanged; the real-model integration eval passes an ``OllamaGenerator`` here.
     """
     service = ResearchService(
         HashingEmbedder(),
         InMemoryVectorStore(),
         authorize,
         audit_path,
+        generator=generator,
     )
     service.index(nvd.load(_sample("nvd_sample.json")))
     service.index(attack.load(_sample("attack_sample.json")))
