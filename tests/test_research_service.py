@@ -493,6 +493,20 @@ def test_search_dedups_to_best_passage_per_document(tmp_path):
     assert [c.document_id for c in res.citations] == ["CVE-2099-0001"]  # one entry despite chunks
 
 
+def test_search_answer_and_audit_are_byte_stable(tmp_path):
+    # Characterization (refactor guard, Slice 1b Task 2): pins search()'s exact answer + audit
+    # record so the _retrieve_corpus extraction is proven behavior-preserving. Passes before and
+    # after the refactor; a change here means a shipped search contract moved.
+    audit = tmp_path / "a.jsonl"
+    res = _search_svc(audit).search("widget", role="research_analyst")
+    assert res.outcome is Outcome.OK
+    assert res.answer == '2 document(s) matched "widget".'
+    rec = read_records(audit)[-1]
+    assert rec.objective == 'Search corpus for "widget"'
+    assert rec.retrieved_doc_ids == [c.document_id for c in res.citations]
+    assert rec.conclusion == f"retrieval-only: {len(res.citations)} document(s) from search"
+
+
 # --- KEV coexistence (Phase-2 KEV loader slice) ---
 
 

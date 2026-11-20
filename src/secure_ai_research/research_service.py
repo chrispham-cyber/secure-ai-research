@@ -30,7 +30,7 @@ from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.reporting.report import build_report
 from secure_ai_research.retrieval.authz import may_live_fetch
 from secure_ai_research.retrieval.chunking import chunk
-from secure_ai_research.retrieval.ports import ChunkRecord, Embedder, VectorStore
+from secure_ai_research.retrieval.ports import ChunkHit, ChunkRecord, Embedder, VectorStore
 
 
 class Outcome(StrEnum):
@@ -53,6 +53,20 @@ class ResearchResult:
     answer: str
     citations: list[Citation]
     research_id: str
+
+
+@dataclass(frozen=True)
+class _CorpusRetrieval:
+    """Authorize-before-retrieve over the whole authorized corpus (shared by ``search`` and
+    ``ask``). When ``allowed`` is empty the store is **not** queried and the other fields are
+    empty; the caller emits its own terminal DENIED record. ``hits`` are relevance-floored
+    (``score > 0``); ``ordered_ids``/``citations`` are the per-document dedup in hit order.
+    """
+
+    allowed: set[str]
+    hits: list[ChunkHit]
+    ordered_ids: list[str]
+    citations: list[Citation]
 
 
 class ResearchService:
@@ -292,6 +306,36 @@ class ResearchService:
             objective=f"Explain ATT&CK technique {technique_id} with cited public sources",
         )
 
+    def _retrieve_corpus(self, query: str, role: str, limit: int) -> _CorpusRetrieval:
+        """Authorize-before-retrieve over the whole corpus the role may see, relevance-floored.
+
+        Shared by ``search`` and ``ask``: the authorized scope is the whole set (not intersected
+        with any id); the store is queried only when that set is non-empty, so a role that may see
+        nothing never queries it; and zero-score chunks are dropped (cosine is 0 exactly when the
+        query shares no token) so "nothing matched" is a real empty result, not non-matching junk.
+        Authorization runs before retrieval here, in one place, for both callers.
+        """
+        allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
+        if not allowed:
+            return _CorpusRetrieval(allowed, [], [], [])
+        hits = [
+            h
+            for h in self._store.query(
+                self._embedder.embed([query])[0], allowed_document_ids=allowed, limit=limit
+            )
+            if h.score > 0
+        ]
+        ordered_ids: list[str] = []
+        first_text: dict[str, str] = {}
+        for hit in hits:
+            if hit.document_id not in first_text:
+                ordered_ids.append(hit.document_id)
+                first_text[hit.document_id] = hit.text
+        citations = [
+            Citation(did, str(self._docs[did].source_url), first_text[did]) for did in ordered_ids
+        ]
+        return _CorpusRetrieval(allowed, hits, ordered_ids, citations)
+
     def search(self, query: str, *, role: str, limit: int = 5) -> ResearchResult:
         """Ranked, cited, audited free-text search over the whole authorized corpus.
 
@@ -305,39 +349,14 @@ class ResearchService:
         now = datetime.now(UTC)
         objective = f'Search corpus for "{query}"'
 
-        # Authorize before retrieval: the scope is the whole set the role may see (not
-        # intersected with any id). A role that may see nothing retrieves nothing at all.
-        allowed = {did for did, doc in self._snapshot() if self._authorize(role, doc)}
-        if not allowed:
+        r = self._retrieve_corpus(query, role, limit)
+        if not r.allowed:
             self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
             return ResearchResult(Outcome.DENIED, "", [], rid)
 
-        # Relevance floor: the store returns a flat top-``limit`` that includes zero-score
-        # chunks (cosine is 0 exactly when the query shares no token). A search must drop
-        # those so "nothing matched" is a real empty result, not non-matching junk. This
-        # lives here, not in the shared store, so ``_research`` and the id-routes are
-        # unaffected.
-        hits = [
-            h
-            for h in self._store.query(
-                self._embedder.embed([query])[0], allowed_document_ids=allowed, limit=limit
-            )
-            if h.score > 0
-        ]
-
-        ordered_ids: list[str] = []
-        first_text: dict[str, str] = {}
-        for hit in hits:
-            if hit.document_id not in first_text:
-                ordered_ids.append(hit.document_id)
-                first_text[hit.document_id] = hit.text
-
-        citations = [
-            Citation(did, str(self._docs[did].source_url), first_text[did]) for did in ordered_ids
-        ]
         answer = (
-            f'{len(ordered_ids)} document(s) matched "{query}".'
-            if ordered_ids
+            f'{len(r.ordered_ids)} document(s) matched "{query}".'
+            if r.ordered_ids
             else f'No documents matched "{query}".'
         )
         emit(
@@ -346,18 +365,18 @@ class ResearchService:
                 analyst_id=analyst_id,
                 timestamp=now,
                 objective=objective,
-                data_source_ids=sorted({self._docs[did].source for did in ordered_ids}),
-                document_hashes=[self._docs[did].integrity_hash for did in ordered_ids],
+                data_source_ids=sorted({self._docs[did].source for did in r.ordered_ids}),
+                document_hashes=[self._docs[did].integrity_hash for did in r.ordered_ids],
                 model_id="retrieval-only",
                 model_version="",
                 prompt_template_version="",
-                retrieved_doc_ids=ordered_ids,
-                model_output="\n".join(f"{h.text} [{h.document_id}]" for h in hits),
-                conclusion=f"retrieval-only: {len(ordered_ids)} document(s) from search",
+                retrieved_doc_ids=r.ordered_ids,
+                model_output="\n".join(f"{h.text} [{h.document_id}]" for h in r.hits),
+                conclusion=f"retrieval-only: {len(r.ordered_ids)} document(s) from search",
             ),
             self._audit_path,
         )
-        return ResearchResult(Outcome.OK, answer, citations, rid)
+        return ResearchResult(Outcome.OK, answer, r.citations, rid)
 
     def _emit_terminal(
         self,
