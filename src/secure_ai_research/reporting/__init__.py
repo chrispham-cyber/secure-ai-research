@@ -1,4 +1,5 @@
 """Reporting: render an analysis into a cited, reviewable report.
 
-Documented stub in the starter scaffold (ROADMAP Phase 2).
+Implemented: assembles retrieved evidence into a cited report, drops uncited claims, and
+gates on citation faithfulness before a human reviews and accepts the analysis.
 """

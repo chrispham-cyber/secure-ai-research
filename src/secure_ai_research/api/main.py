@@ -1,15 +1,16 @@
-"""FastAPI application — Phase-1 skeleton.
-
-Exposes only what is real in the starter scaffold:
+"""FastAPI application.
 
 * ``GET /health``  — liveness.
 * ``GET /version`` — provenance: package version, git SHA, and the names in the
   approved-model registry (read from disk; no model weights required).
-* ``/research/*``  — present but **501 Not Implemented**, pointing at the roadmap.
+* ``GET /research/cve/{cve_id}`` / ``GET /research/attack/{technique_id}`` — look up a
+  single record.
+* ``POST /research/search`` — retrieve the passages relevant to a query.
+* ``POST /research/ask`` — draft a cited answer.
 
-Nothing here performs retrieval or inference yet. The point of shipping the
-skeleton first is that the audit trail and authorization gate are reviewable
-before any answer-producing code exists.
+The audit trail and the authorization gate are the backbone: every analysis path emits a
+signed, hash-chained record, and no document reaches model context before the caller is
+authorized for it.
 """
 
 from __future__ import annotations
