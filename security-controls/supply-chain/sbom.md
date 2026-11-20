@@ -84,7 +84,12 @@ actually verified — no box is checked on trust.
   `tests/test_compose_pinning.py::test_compose_images_are_digest_pinned`.
 - [~] `pip-audit` reviewed: the **runtime** set (the release SBOM) carries no advisory. The dev
   tool `virtualenv==21.14.5` (requirements-dev.txt, via pre-commit — **not** in the release SBOM)
-  has open advisories fixed in ≥ 21.14.10; bump via Dependabot. No runtime exposure.
+  carries open advisories (`PYSEC-2026-4374`…`4383`) fixed in **21.14.9**. The fix is currently
+  **blocked**: every `virtualenv ≥ 21.14.9` requires `packaging ≥ 26.3`, which the pinned SBOM
+  generator `cyclonedx-bom==5.5.0` forbids (`packaging < 26`). Remediation = bump `cyclonedx-bom`
+  to a `packaging ≥ 26`-compatible release (≥ 6.x; 9.x allows `packaging < 27`) **and re-attest
+  the release SBOM** — a cross-cutting change out of this slice's byte-identical scope, tracked as
+  Future work. No runtime exposure (dev-only provisioning tool).
 - [~] Model integrity: the SHA-256 verifier is tested (`tests/test_verify_model.py`), but this
   scaffold ships **no real weights** (PUBLIC / synthetic) — N/A for v0.1.0, enforced once a model
   is pinned.
@@ -98,6 +103,10 @@ current offline/deterministic posture** — it needs a network transparency log 
 The committed SHA-256 manifest is the in-posture integrity pin until then. Container **digest**
 pinning is now in place for every resolvable base image (`minio/minio` excepted — retired
 upstream); re-enable it there by moving to a maintained S3-compatible image.
+
+Bumping `cyclonedx-bom` (5.5.0 → ≥ 6.x) would clear the dev-only `virtualenv` advisory — which
+needs `packaging ≥ 26.3`, forbidden by 5.5.0's `packaging < 26` — but it changes the SBOM
+generator and therefore re-attests the committed release SBOM, so it is deferred to its own slice.
 
 These controls address supply-chain tampering and secret exposure (threats T17/T18 in the
 [threat model](../../architecture/threat-model.md)).
