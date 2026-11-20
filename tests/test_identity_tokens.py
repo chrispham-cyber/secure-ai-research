@@ -6,6 +6,9 @@ checks are deterministic. Covers Review Focus #1 (alg-confusion) and #2 (non-obj
 
 from __future__ import annotations
 
+import base64
+import json
+
 import pytest
 
 from _authtokens import TEST_SECRET, mint_hs256, raw_token_with_header, raw_token_with_payload
@@ -13,6 +16,10 @@ from secure_ai_research.identity.ports import AuthError
 from secure_ai_research.identity.tokens import verify_hs256
 
 NOW = 1_000_000.0
+
+
+def _seg(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
 def test_valid_token_returns_claims():
@@ -80,5 +87,24 @@ def test_rejects_wrong_segment_count():
 
 def test_rejects_crit_header():
     tok = raw_token_with_header({"alg": "HS256", "typ": "JWT", "crit": ["x"]})
+    with pytest.raises(AuthError):
+        verify_hs256(tok, TEST_SECRET, now=NOW)
+
+
+def test_rejects_non_ascii_payload_segment():
+    # Starlette decodes header bytes as latin-1, so a raw byte >=0x80 reaches the verifier as a
+    # non-ASCII char in the payload SEGMENT. The HMAC input is encoded as ASCII, so the segment
+    # must be charset-gated first → AuthError, never an UnicodeEncodeError 500 (unauthenticated-
+    # reachable: the crash is at signature *computation*, before any valid signature is needed).
+    header = _seg(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    token = f"{header}.a\xe9b.{_seg(b'sig')}"
+    with pytest.raises(AuthError):
+        verify_hs256(token, TEST_SECRET, now=NOW)
+
+
+def test_rejects_overflowing_numeric_claim():
+    # exp = 10**400 parses to an arbitrary-precision int; float() raises OverflowError (an
+    # ArithmeticError, not ValueError), which must surface as AuthError, not an unhandled 500.
+    tok = mint_hs256(extra={"exp": 10**400}, include_exp=False, now=NOW)
     with pytest.raises(AuthError):
         verify_hs256(tok, TEST_SECRET, now=NOW)

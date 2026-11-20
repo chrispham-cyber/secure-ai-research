@@ -50,7 +50,10 @@ def _numeric_claim(payload: dict[str, Any], name: str) -> float | None:
     value = payload[name]
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise AuthError(f"non-numeric {name}")
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError) as exc:  # e.g. exp = 10**400 → int too large for float
+        raise AuthError(f"out-of-range {name}") from exc
     if not math.isfinite(number):
         raise AuthError(f"non-finite {name}")
     return number
@@ -67,6 +70,13 @@ def verify_hs256(token: str, secret: str, *, now: float) -> dict[str, Any]:
     if len(parts) != 3:
         raise AuthError("token must have three segments")
     header_b64, payload_b64, sig_b64 = parts
+    # Charset-gate every segment up front, before the HMAC encodes "header.payload" as ASCII.
+    # Starlette decodes request headers as latin-1, so an attacker can put a byte >=0x80 in a
+    # segment; without this gate that would raise UnicodeEncodeError at signature time (an
+    # unauthenticated-reachable 500), not a fail-closed AuthError.
+    for segment in parts:
+        if not _B64URL.fullmatch(segment):
+            raise AuthError("invalid token encoding")
 
     header = _loads_object(_decode_segment(header_b64))
     if header.get("alg") != "HS256":
