@@ -8,6 +8,7 @@ from secure_ai_research.api.deps import get_service
 from secure_ai_research.api.main import app
 from secure_ai_research.audit.record import read_records
 from secure_ai_research.config import get_settings
+from secure_ai_research.generation.ports import GeneratorError
 from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
@@ -355,9 +356,11 @@ def test_deps_sigma_rule_is_searchable(tmp_path, monkeypatch):
 # --- POST /research/search (Phase-2 search endpoint slice) ---
 
 
-def _override_search_service(tmp_path):
+def _override_search_service(tmp_path, generator=None):
     audit = tmp_path / "audit.jsonl"
-    svc = ResearchService(HashingEmbedder(), InMemoryVectorStore(), authorize, audit)
+    svc = ResearchService(
+        HashingEmbedder(), InMemoryVectorStore(), authorize, audit, generator=generator
+    )
     svc.index(
         [
             IngestedDocument(
@@ -436,3 +439,57 @@ def test_search_limit_out_of_range_422(tmp_path, bad_limit):
         headers={"X-Role": "research_analyst"},
     )
     assert resp.status_code == 422
+
+
+# --- POST /research/ask (Slice 1b free-form QA) ---
+# Reuses the search-route corpus ("widget …" docs) so the query "widget" retrieves real hits
+# and the injected generator is actually invoked (the 503 path needs a non-empty retrieval).
+
+
+class _AskRecordingGen:
+    """Grounded fake: one line citing the retrieved CVE, so build_report keeps it."""
+
+    def generate(self, prompt, passages) -> str:
+        return "widget widget widget [CVE-2099-0001]"
+
+
+class _AskFailingGen:
+    def generate(self, prompt, passages) -> str:
+        raise GeneratorError("boom")
+
+
+def test_ask_200_returns_answer_and_citations(tmp_path):
+    _override_search_service(tmp_path, _AskRecordingGen())
+    r = client.post(
+        "/research/ask", json={"query": "widget"}, headers={"X-Role": "research_analyst"}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "answer" in body and "citations" in body and "research_id" in body
+    assert body["citations"]
+    assert set(body["citations"][0]) == {"document_id", "source_url", "passage"}
+
+
+def test_ask_missing_role_is_403(tmp_path):
+    _override_search_service(tmp_path)
+    r = client.post("/research/ask", json={"query": "widget"})
+    assert r.status_code == 403
+    assert r.json()["detail"] == "role not authorized"
+
+
+def test_ask_generator_failure_is_503(tmp_path):
+    _override_search_service(tmp_path, _AskFailingGen())
+    r = client.post(
+        "/research/ask", json={"query": "widget"}, headers={"X-Role": "research_analyst"}
+    )
+    assert r.status_code == 503
+    assert r.json()["detail"] == "upstream source unavailable"
+
+
+def test_ask_empty_query_is_422(tmp_path):
+    audit = _override_search_service(tmp_path)
+    r = client.post(
+        "/research/ask", json={"query": "   "}, headers={"X-Role": "research_analyst"}
+    )
+    assert r.status_code == 422
+    assert not audit.exists()  # validation rejected before the handler → zero audit records
