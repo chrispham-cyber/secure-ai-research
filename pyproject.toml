@@ -50,7 +50,7 @@ oidc = [
 # NullCipher path stays stdlib-only; the hermetic suite never imports `cryptography` — only the
 # -m integration Fernet round-trip and a live deployment do.
 crypto = [
-    "cryptography>=43,<47",
+    "cryptography>=43,<51",
 ]
 
 [tool.setuptools.packages.find]
