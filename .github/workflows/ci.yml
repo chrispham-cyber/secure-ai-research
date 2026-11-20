@@ -56,6 +56,30 @@ jobs:
           path: sbom/
           if-no-files-found: ignore
 
+  sbom-verify:
+    name: verify signed SBOM
+    runs-on: ubuntu-latest
+    # Public key only: verify the committed signature. No OIDC identity token
+    # and no secret -- keyed-offline posture (keyless Sigstore/Rekor is
+    # deliberately not used; it would publish this private repo's CI identity).
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: sigstore/cosign-installer@v3.7.0
+      - name: Verify release SBOM signature (gates once signed; skips until then)
+        run: |
+          if [ -f sbom/cosign.pub ] && [ -f sbom/release-sbom.cdx.json.sig ]; then
+            echo "Committed signature present — verifying (gating)."
+            cosign verify-blob \
+              --key sbom/cosign.pub \
+              --insecure-ignore-tlog=true \
+              --signature sbom/release-sbom.cdx.json.sig \
+              sbom/release-sbom.cdx.json
+          else
+            echo "No committed signature yet (key ceremony pending) — skipping."
+          fi
+
   secret-scan:
     name: gitleaks
     runs-on: ubuntu-latest
