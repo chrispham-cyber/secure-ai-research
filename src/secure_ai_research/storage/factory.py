@@ -24,5 +24,6 @@ def make_object_store(settings: Settings) -> ObjectStore:
             settings.minio_access_key,
             settings.minio_secret_key,
             settings.minio_bucket,
+            secure=settings.minio_secure,
         )
     return InMemoryObjectStore()

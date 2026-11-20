@@ -12,6 +12,7 @@ from __future__ import annotations
 from secure_ai_research.config import Settings
 from secure_ai_research.retrieval.ports import VectorStore
 from secure_ai_research.retrieval.vectorstore import InMemoryVectorStore
+from secure_ai_research.transit import apply_sslmode
 
 
 def make_vector_store(settings: Settings) -> VectorStore:
@@ -19,5 +20,6 @@ def make_vector_store(settings: Settings) -> VectorStore:
     if settings.vector_store == "pgvector":
         from secure_ai_research.retrieval.vectorstore import PgVectorStore
 
-        return PgVectorStore(settings.db_url)
+        # Apply the in-transit TLS knob to the DSN (no-op unless SAIR_DB_SSLMODE is set).
+        return PgVectorStore(apply_sslmode(settings.db_url, settings.db_sslmode))
     return InMemoryVectorStore()
