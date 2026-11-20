@@ -83,6 +83,27 @@ class Settings(BaseSettings):
     oidc_audience: str = "sair-api"
     oidc_timeout: float = 5.0
 
+    # --- Secret management / encryption / transit (Slice 5) ---
+    # Prod gate. When true, verify_secrets() fails closed at startup on any active placeholder/weak
+    # secret (and overrides auth_allow_dev_secret). Default false keeps dev running on placeholders.
+    require_strong_secrets: bool = False
+    # Secret source behind the SecretProvider seam. "env" (default) reads SAIR_* settings;
+    # "file" reads Docker/systemd-style per-secret files under secret_dir.
+    secret_provider: Literal["env", "file"] = "env"
+    secret_dir: Path = Path("secrets")
+    # HMAC key for the tamper-evident audit chain (a managed secret). The default is a well-known
+    # dev placeholder; verify_secrets refuses it in prod. Must equal audit.signing.DEV_AUDIT_KEY.
+    audit_signing_key: str = "dev-audit-signing-key-change-me-not-for-production"
+    # Fernet key for the opt-in at-rest cipher (required only when cipher == "fernet").
+    audit_encryption_key: str = ""
+    # At-rest cipher behind the Cipher seam. "none" (default) is identity/plaintext-signed;
+    # "fernet" encrypts the audit log (opt-in, requires the `crypto` extra).
+    cipher: Literal["none", "fernet"] = "none"
+    # In-transit knobs. Empty/False/False keep today's DSN/clients unchanged.
+    db_sslmode: str = ""
+    minio_secure: bool = False
+    require_https: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:
