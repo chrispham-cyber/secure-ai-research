@@ -44,10 +44,25 @@ class InMemoryVectorStore:
 
 
 class PgVectorStore:
-    """Postgres/pgvector-backed store — real adapter, next slice."""
+    """Postgres/pgvector-backed store (implements ``VectorStore``) — real adapter next task.
 
-    def __init__(self) -> None:
+    The signatures are fixed here — a ``dsn`` constructor plus the ``VectorStore`` methods — so
+    the ``make_vector_store`` factory type-checks against this class now; the bodies stay
+    fail-loud until Slice 2 Task 4 wires the real psycopg/pgvector adapter. ``dsn`` defaults to
+    ``""`` so the stub-construction test keeps calling ``PgVectorStore()``.
+    """
+
+    def __init__(self, dsn: str = "") -> None:
+        self._dsn = dsn
         raise NotImplementedError(
-            "Vector store via Postgres/pgvector — ROADMAP Phase 2 (weeks 5-8): the "
-            "next slice wires the real adapter (scope filter as a SQL predicate)"
+            "Vector store via Postgres/pgvector — ROADMAP Phase 2 (weeks 5-8): Slice 2 Task 4 "
+            "wires the real adapter (scope filter as a SQL predicate)"
         )
+
+    def upsert(self, entries: list[ChunkRecord]) -> None:
+        raise NotImplementedError
+
+    def query(
+        self, embedding: list[float], *, allowed_document_ids: set[str], limit: int
+    ) -> list[ChunkHit]:
+        raise NotImplementedError

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     )
 
     db_url: str = "postgresql://sair:sair@localhost:5432/sair"
+    # Vector-store backend behind the VectorStore seam. "memory" (default) is the deterministic
+    # in-memory store — offline/hermetic, no dependency; "pgvector" uses Postgres/pgvector at
+    # db_url (opt-in, requires the `pgvector` extra). Default keeps the platform offline.
+    vector_store: Literal["memory", "pgvector"] = "memory"
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"
     minio_secret_key: str = "minioadmin"
