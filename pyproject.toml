@@ -30,6 +30,13 @@ dev = [
     "cyclonedx-bom>=4.6,<6.0",
     "pre-commit>=4.0,<5.0",
 ]
+# Opt-in Postgres/pgvector backend for the VectorStore seam (SAIR_VECTOR_STORE=pgvector).
+# Kept out of the base install so the default path stays dependency-free and offline; the
+# hermetic suite never imports these — only the -m integration tests and a live deployment do.
+pgvector = [
+    "psycopg[binary]>=3.2,<4.0",
+    "pgvector>=0.3,<1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

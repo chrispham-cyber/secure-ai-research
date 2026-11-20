@@ -32,9 +32,11 @@ infrastructure, and the real security primitives, so later phases build on solid
 **Objective:** turn the stubs into a working, cited retrieval pipeline on public data.
 
 - [x] Week 5 — Ingestion loaders: NVD, CISA KEV → `ResearchDocument` with content hashes
-- [ ] Week 5 — Object store (MinIO) for raw payloads; pgvector schema + migrations — _deferred: infra outside the in-posture offline/stdlib envelope_
+- [x] Week 5 — pgvector schema (`sair_chunks`, `vector(256)`) via `PgVectorStore._ensure_schema` — _Phase 5 Slice 2; opt-in `SAIR_VECTOR_STORE=pgvector`, exact-NN parity with the in-memory store_
+- [ ] Week 5 — Object store (MinIO) for raw payloads; schema **migrations** (Alembic) — _deferred: MinIO = next slice; schema is `CREATE TABLE IF NOT EXISTS`, no migration tool yet_
 - [x] Week 6 — Ingestion: MITRE ATT&CK, Sigma; chunking that preserves citation boundaries
-- [ ] Week 6 — Local embeddings via Ollama; upsert chunks+embeddings to pgvector — _deferred: `Embedder`/`VectorStore` Protocol seams in place (HashingEmbedder + InMemoryVectorStore in posture)_
+- [x] Week 6 — Upsert chunks+embeddings to pgvector (idempotent `ON CONFLICT`, scope as a SQL predicate) — _Phase 5 Slice 2_
+- [ ] Week 6 — Local embeddings via Ollama — _deferred: `Embedder` seam in place (HashingEmbedder in posture); `OllamaEmbedder` still a fail-loud stub_
 - [x] Week 7 — **Authorize-before-retrieve** gate; nearest-neighbor retrieval within scope
 - [ ] Week 7 — Model inference constrained to retrieved passages (local generation model) — _deferred: retrieval-only in posture; no LLM synthesis_
 - [x] Week 8 — Cited report rendering (drop uncited claims); wire `/research/*` endpoints live
