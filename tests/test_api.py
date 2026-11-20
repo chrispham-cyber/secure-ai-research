@@ -13,7 +13,7 @@ from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.ingested import IngestedDocument
 from secure_ai_research.ingestion.schema import Classification, DocumentType, ResearchDocument
 from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
-from secure_ai_research.research_service import ResearchService
+from secure_ai_research.research_service import Outcome, ResearchResult, ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
 from secure_ai_research.retrieval.vectorstore import InMemoryVectorStore
@@ -493,3 +493,39 @@ def test_ask_empty_query_is_422(tmp_path):
     )
     assert r.status_code == 422
     assert not audit.exists()  # validation rejected before the handler → zero audit records
+
+
+class _FetchErrorService:
+    """Minimal service stub: every store-backed route reports a vector-store outage.
+
+    Slice 2: once the shared store can fail at request time, every route over it must surface
+    FETCH_ERROR as 503 — not a masked 404 (attack) or empty 200 (search).
+    """
+
+    def search(self, query, *, role, limit=5):  # noqa: ANN001 - test stub
+        return ResearchResult(Outcome.FETCH_ERROR, "", [], "rid-search")
+
+    def research_attack(self, technique_id, *, role):  # noqa: ANN001 - test stub
+        return ResearchResult(Outcome.FETCH_ERROR, "", [], "rid-attack")
+
+
+def _override_fetch_error_service():
+    app.dependency_overrides[get_service] = lambda: _FetchErrorService()
+
+
+def test_search_store_failure_is_503():
+    _override_fetch_error_service()
+    resp = client.post(
+        "/research/search", json={"query": "widget"}, headers={"X-Role": "research_analyst"}
+    )
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "upstream source unavailable"
+    assert resp.json()["research_id"] == "rid-search"
+
+
+def test_attack_store_failure_is_503():
+    _override_fetch_error_service()
+    resp = client.get("/research/attack/T1059", headers={"X-Role": "research_analyst"})
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "upstream source unavailable"
+    assert resp.json()["research_id"] == "rid-attack"
