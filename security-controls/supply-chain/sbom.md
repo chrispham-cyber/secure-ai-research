@@ -82,14 +82,16 @@ actually verified — no box is checked on trust.
   `otel/opentelemetry-collector-contrib:0.104.0`); `minio/minio` stays tag-only (retired
   upstream, see Slice 3) and is allowlisted. Enforced by
   `tests/test_compose_pinning.py::test_compose_images_are_digest_pinned`.
-- [~] `pip-audit` reviewed: the **runtime** set (the release SBOM) carries no advisory. The dev
-  tool `virtualenv==21.14.5` (requirements-dev.txt, via pre-commit — **not** in the release SBOM)
-  carries open advisories (`PYSEC-2026-4374`…`4383`) fixed in **21.14.9**. The fix is currently
-  **blocked**: every `virtualenv ≥ 21.14.9` requires `packaging ≥ 26.3`, which the pinned SBOM
-  generator `cyclonedx-bom==5.5.0` forbids (`packaging < 26`). Remediation = bump `cyclonedx-bom`
-  to a `packaging ≥ 26`-compatible release (≥ 6.x; 9.x allows `packaging < 27`) **and re-attest
-  the release SBOM** — a cross-cutting change out of this slice's byte-identical scope, tracked as
-  Future work. No runtime exposure (dev-only provisioning tool).
+- [x] `pip-audit` reviewed: the **runtime** set (the release SBOM) carries no advisory. The dev-tool
+  `virtualenv` advisories (`PYSEC-2026-4374`…`4383`, fixed in **21.14.9**) are now **cleared** —
+  `requirements-dev.txt` pins `virtualenv==21.15.9` (floored and regression-guarded by
+  `tests/test_dev_lock.py`). This was unblocked by bumping the SBOM generator
+  `cyclonedx-bom` 5.5.0 → **9.0.0** (lifting the `packaging < 26` cap; `packaging` now `26.3`), and
+  the release SBOM was **re-attested** with 9.x (CycloneDX spec 1.5 → 1.6). The `{name,version,purl}`
+  integrity digest is unchanged — same 24 runtime components — so the drift/completeness gate stayed
+  green. **Residual (honest):** a *separate, pre-existing* dev-tool advisory remains — `black==25.12.0`
+  (`PYSEC-2026-2120`/`2121`, `CVE-2026-114134`, fixed in 26.3.1+, within our `black<27.0` cap). Dev-only,
+  **not** in the release SBOM; tracked as a follow-up bump (Future work), untouched by this slice.
 - [~] Model integrity: the SHA-256 verifier is tested (`tests/test_verify_model.py`), but this
   scaffold ships **no real weights** (PUBLIC / synthetic) — N/A for v0.1.0, enforced once a model
   is pinned.
@@ -104,9 +106,11 @@ The committed SHA-256 manifest is the in-posture integrity pin until then. Conta
 pinning is now in place for every resolvable base image (`minio/minio` excepted — retired
 upstream); re-enable it there by moving to a maintained S3-compatible image.
 
-Bumping `cyclonedx-bom` (5.5.0 → ≥ 6.x) would clear the dev-only `virtualenv` advisory — which
-needs `packaging ≥ 26.3`, forbidden by 5.5.0's `packaging < 26` — but it changes the SBOM
-generator and therefore re-attests the committed release SBOM, so it is deferred to its own slice.
+The `cyclonedx-bom` generator was bumped 5.5.0 → **9.0.0** (its own reviewed slice), clearing the
+dev-only `virtualenv` advisory and re-attesting the release SBOM (CycloneDX spec 1.5 → 1.6, integrity
+digest unchanged). The remaining dev-tool follow-up is `black==25.12.0` → ≥ 26.3.1 (`PYSEC-2026-2120`/
+`2121`, `CVE-2026-114134`); it is within the existing `black<27.0` cap and, like `virtualenv`, is a
+dev-only provisioning tool absent from the release SBOM.
 
 These controls address supply-chain tampering and secret exposure (threats T17/T18 in the
 [threat model](../../architecture/threat-model.md)).
