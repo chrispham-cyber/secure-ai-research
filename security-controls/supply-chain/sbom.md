@@ -22,16 +22,17 @@ Built from the pinned **runtime** lock `requirements.txt` with `--output-reprodu
 `timestamp`/`serialNumber`, byte-identical across runs). Both files are **committed**. A hermetic
 test (`tests/test_sbom.py`) regenerates from the lock and fails CI if the digest, the manifest,
 or the completeness check drifts — **a dependency change that is not re-attested (`make
-sbom-release` + commit) turns CI red.** This committed SHA-256 pin is the in-posture "signed
-SBOM" (a cryptographic signature is *Future work*, below).
+sbom-release` + commit) turns CI red.** The committed SHA-256 manifest is the *dependency-drift*
+pin; the release SBOM is additionally **signed** with a keyed, offline cosign signature over the
+whole file bytes (see **SBOM signing** below).
 
 **What the digest covers.** The manifest SHA-256 is a *dependency-drift* pin, taken over the
 canonical `{name, version, purl}` projection of the components — it reddens CI on any
 added, removed, or version-changed dependency. It is deliberately **not** a whole-file hash:
 git already provides integrity for the committed `sbom/` artifacts, and widening the digest
 into volatile fields (`license`, `externalReferences`) would flap the gate on benign
-tool-output changes. Whole-file tamper-evidence, if ever required, is a separate control
-(git, or a cryptographic signature — see *Future work*).
+tool-output changes. Whole-file tamper-evidence is provided separately by the cosign
+signature over the SBOM bytes (see **SBOM signing** below), on top of git.
 
 **Environment SBOM — dev convenience.**
 
@@ -42,6 +43,37 @@ make sbom            # cyclonedx-py environment -> sbom.json (current virtualenv
 `sbom.json` is **git-ignored**, non-reproducible, and includes dev tooling — a quick local
 inventory, never the release artifact. CI regenerates the release SBOM on every run and uploads
 `sbom/` as a build artifact (`.github/workflows/ci.yml`).
+
+## SBOM signing (keyed, offline cosign)
+
+The release SBOM is signed with **cosign** over the whole file bytes, keeping the
+offline/deterministic posture:
+
+```bash
+make sbom-sign      # cosign sign-blob --tlog-upload=false  (needs cosign + COSIGN_KEY, COSIGN_PASSWORD)
+#   -> sbom/release-sbom.cdx.json.sig   (detached signature, committed)
+make sbom-verify    # cosign verify-blob --insecure-ignore-tlog=true  (needs cosign; uses sbom/cosign.pub)
+```
+
+- **Keyed, no transparency log.** `--tlog-upload=false` on sign and `--insecure-ignore-tlog=true`
+  on verify mean **no network and no Rekor** — verification is a local check of the committed
+  `.sig` against the committed `sbom/cosign.pub`. The signing module
+  (`src/secure_ai_research/supply_chain/signing.py`) is stdlib-only and shells out to the cosign
+  binary, exactly as the SBOM generator shells out to `cyclonedx-py`; the default
+  `-m "not integration"` test suite never needs cosign or network.
+- **CI verifies, never signs.** The `sbom-verify` CI job installs cosign and verifies the committed
+  signature with the **public key only** — no secret, no OIDC `id-token`. It **skips** cleanly until
+  a signature is committed and **gates** (red on mismatch — a stale or forged SBOM) once
+  `sbom/cosign.pub` + the `.sig` are present. A re-attested SBOM (`make sbom-release`) that is not
+  re-signed is caught here.
+- **One-time key ceremony** (the key-holder, offline): `cosign generate-key-pair` (keep
+  `cosign.key` private — it is git-ignored by `*.key`, set a `COSIGN_PASSWORD`) → commit
+  `sbom/cosign.pub` → `make sbom-release` (if needed) then `make sbom-sign` → commit
+  `sbom/release-sbom.cdx.json.sig`. **Rotation** = generate a new pair, re-sign, commit the new
+  public key + signature.
+- **Why keyed and not keyless.** Keyless Sigstore (Fulcio/Rekor) would publish this **private**
+  repo's CI identity to the **public** Rekor transparency log, and requires a network and an
+  `id-token` in CI — both outside the posture. Keyless/Rekor therefore stays *Future work* (below).
 
 ## Dependency integrity
 
@@ -77,6 +109,10 @@ actually verified — no box is checked on trust.
 - [x] `requirements.txt` (runtime lock) reviewed; the release SBOM is built from it.
 - [x] Reproducible release SBOM produced (`make sbom-release`), **24 components**, SHA-256-pinned
   in `sbom/sbom.manifest.json`; drift + completeness gate green in CI.
+- [~] Release SBOM **signing** wired (keyed offline cosign — `make sbom-sign` / `make sbom-verify`,
+  CI `sbom-verify` job): module + hermetic and integration tests green. A real committed signature
+  awaits the one-time **key ceremony** (above); the CI verify gate skips until `sbom/cosign.pub` +
+  the `.sig` are committed, then gates.
 - [x] Container base images **digest-pinned** (`@sha256:…`) for the four that resolve
   (`pgvector/pgvector:pg16`, `ollama/ollama:0.3.6`, `quay.io/keycloak/keycloak:26.0`,
   `otel/opentelemetry-collector-contrib:0.104.0`); `minio/minio` stays tag-only (retired
@@ -101,11 +137,12 @@ actually verified — no box is checked on trust.
 
 ## Future work
 
-Cryptographic SBOM signing (cosign / sigstore, or a detached GPG signature) is **out of the
-current offline/deterministic posture** — it needs a network transparency log or a managed key.
-The committed SHA-256 manifest is the in-posture integrity pin until then. Container **digest**
-pinning is now in place for every resolvable base image (`minio/minio` excepted — retired
-upstream); re-enable it there by moving to a maintained S3-compatible image.
+**Keyed** cosign SBOM signing is now in place (see **SBOM signing** above): a detached signature
+over the SBOM bytes, verified offline in CI against the committed public key. **Keyless** Sigstore
+(Fulcio/Rekor) remains out of the current offline/deterministic posture — it needs a network
+transparency log and, for a **private** repo, would publish the CI identity to the public Rekor
+log. Container **digest** pinning is in place for every resolvable base image (`minio/minio`
+excepted — retired upstream); re-enable it there by moving to a maintained S3-compatible image.
 
 The `cyclonedx-bom` generator was bumped 5.5.0 → **9.0.0** (its own reviewed slice), clearing the
 dev-only `virtualenv` advisory and re-attesting the release SBOM (CycloneDX spec 1.5 → 1.6, integrity

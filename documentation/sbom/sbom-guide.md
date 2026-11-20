@@ -23,6 +23,22 @@ make sbom           # dev convenience: the current virtualenv, git-ignored, non-
 
 CI regenerates the release SBOM on every run and uploads `sbom/` as a build artifact.
 
+## Signing & verifying
+The release SBOM is signed with **cosign** over the whole file bytes, keyed and **offline** (no
+transparency log):
+
+```bash
+make sbom-sign      # cosign sign-blob --tlog-upload=false  -> sbom/release-sbom.cdx.json.sig
+make sbom-verify    # cosign verify-blob --insecure-ignore-tlog=true  (uses sbom/cosign.pub)
+```
+
+Both targets need the **cosign** binary (`brew install cosign`, or see sigstore.dev); signing also
+needs `COSIGN_KEY` + `COSIGN_PASSWORD`. The committed `sbom/cosign.pub` + `.sig` let anyone verify
+offline. CI's `sbom-verify` job verifies with the **public key only** — it skips until a signature
+is committed (the one-time key ceremony) and then gates (red on a stale or forged SBOM). Full
+stance, the ceremony, and key management: see
+[security-controls/supply-chain/sbom.md](../../security-controls/supply-chain/sbom.md).
+
 ## How to read it
 - `components[]` — each dependency: `name`, `version`, `purl`, `licenses`.
 - Diff two SBOMs across releases to see exactly what changed.

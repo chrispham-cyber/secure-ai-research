@@ -75,7 +75,7 @@ infrastructure, and the real security primitives, so later phases build on solid
 - [x] Week 17 — Keycloak/OIDC identity (replaces the `X-Role` dev stub); RBAC/ABAC enforcement — verified-token `get_role` (local HS256 default, opt-in OIDC/RS256, off-by-default insecure X-Role); downstream authz unchanged
 - [ ] Week 18 — Encryption at rest/in transit; secret management; audit WORM/signing
 - [ ] Week 19 — System Security Plan, risk register, assessment-evidence templates filled in
-- [ ] Week 20 — SBOM in the release pipeline; supply-chain checklist signed off
+- [x] Week 20 — SBOM in the release pipeline; supply-chain checklist signed off (+ keyed, offline cosign SBOM signing, verified in CI against a committed public key)
 
 **Deliverables:** SSP + risk assessment + signed SBOM; identity behind the optional profile made default.
 
