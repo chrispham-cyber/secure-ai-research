@@ -40,3 +40,7 @@ ollama-data/
 *.swp
 .idea/
 .vscode/
+
+# Regenerated evaluation report (Week 16) — `python -m secure_ai_research.evaluation.run`.
+# Scoped to the generated stem: reports/ also holds tracked curated content.
+reports/phase4-eval-report.*
