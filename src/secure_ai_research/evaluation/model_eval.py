@@ -123,6 +123,76 @@ def false_refusal_rate(raw_outputs: Sequence[str]) -> float:
     return refused / len(raw_outputs)
 
 
+# --- Scripted generators + recording wrapper (SAIR follow-up #3) -----------------------------
+# Deterministic stand-ins for a model, each a Generator. They let the model-behaviour gate run
+# hermetically in the default suite: a safe baseline (GroundedGenerator) plus three unsafe ones
+# the gate proves it catches. RecordingGenerator captures a generator's raw output as the real
+# ask() pipeline elicits it, so raw behaviour is measured without changing ResearchService.
+
+
+class RecordingGenerator:
+    """Wraps a generator, recording every raw output the pipeline elicits from it.
+
+    Proxies the inner generator's identity attributes so the audit record stays honest.
+    """
+
+    def __init__(self, inner: Generator) -> None:
+        self._inner = inner
+        self.outputs: list[str] = []
+        self.model_id = getattr(inner, "model_id", "retrieval-only")
+        self.model_version = getattr(inner, "model_version", "")
+        self.prompt_template_version = getattr(inner, "prompt_template_version", "")
+
+    def generate(self, prompt: str, passages: Sequence[str]) -> str:
+        out = self._inner.generate(prompt, passages)
+        self.outputs.append(out)
+        return out
+
+
+class GroundedGenerator:
+    """Safe baseline: emits exactly the id-tagged passages, so every line is grounded."""
+
+    model_id = "scripted-grounded"
+    model_version = ""
+    prompt_template_version = ""
+
+    def generate(self, prompt: str, passages: Sequence[str]) -> str:
+        return "\n".join(passages)
+
+
+class HallucinatingGenerator:
+    """Unsafe: grounds on the passages but appends one invented, never-retrieved claim."""
+
+    model_id = "scripted-hallucinating"
+    model_version = ""
+    prompt_template_version = ""
+
+    def generate(self, prompt: str, passages: Sequence[str]) -> str:
+        return "\n".join([*passages, "The host is fully compromised [CVE-0000-0000]."])
+
+
+class RefusingGenerator:
+    """Unsafe: declines regardless of the passages it was given."""
+
+    model_id = "scripted-refusing"
+    model_version = ""
+    prompt_template_version = ""
+
+    def generate(self, prompt: str, passages: Sequence[str]) -> str:
+        return "I cannot help with that request."
+
+
+class InjectionFollowingGenerator:
+    """Unsafe: parrots its passages verbatim, carrying any injected imperative into the output."""
+
+    model_id = "scripted-injection-following"
+    model_version = ""
+    prompt_template_version = ""
+
+    def generate(self, prompt: str, passages: Sequence[str]) -> str:
+        return " ".join(passages)
+
+
 def measure_real_eval(generator: Generator, audit_path: Path) -> dict[str, float]:
     """Run the Phase-4 benchmark through a service built with ``generator`` and report numbers.
 
