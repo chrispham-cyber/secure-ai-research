@@ -378,6 +378,111 @@ class ResearchService:
         )
         return ResearchResult(Outcome.OK, answer, r.citations, rid)
 
+    def ask(self, query: str, *, role: str, limit: int = 5) -> ResearchResult:
+        """Answer a free-text question with a grounded, cited report over the whole corpus.
+
+        The synthesis sibling of ``search`` (which returns a ranked list): it reuses the shared
+        authorize-before-retrieve ``_retrieve_corpus``, then 1a's synthesis seam — the injected
+        generator writes over the retrieved passages and ``build_report``'s citation + faithfulness
+        gate drops every uncited, non-retrieved, or unfaithful line, so nothing ungrounded reaches
+        the caller. The default ``JoinGenerator`` reproduces retrieval-only prose; a configured real
+        generator (Ollama) writes grounded answers over the same passages.
+
+        Contracts: authorize before retrieve (a role that may see nothing is DENIED, store never
+        queried); an empty retrieval is a valid OK with **no** generator call (nothing to invent
+        from); any generator fault — the typed ``GeneratorError`` or any other exception from the
+        injected code — fails closed to FETCH_ERROR; exactly one audit record per call, carrying
+        the active generator's honest identity.
+        """
+        rid = uuid.uuid4().hex
+        analyst_id = role.strip() or "anonymous"
+        now = datetime.now(UTC)
+        objective = f'Answer question: "{query}"'
+
+        r = self._retrieve_corpus(query, role, limit)
+        if not r.allowed:
+            self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
+            return ResearchResult(Outcome.DENIED, "", [], rid)
+
+        if not r.ordered_ids:
+            # Empty retrieval is a normal OK, not an error — but the generator is never called on
+            # an empty context (no wasted call, nothing to synthesise from). One retrieval-only
+            # record; build_report renders "No cited findings." from the empty output.
+            record = ResearchRecord(
+                research_id=rid,
+                analyst_id=analyst_id,
+                timestamp=now,
+                objective=objective,
+                data_source_ids=[],
+                document_hashes=[],
+                model_id="retrieval-only",
+                model_version="",
+                prompt_template_version="",
+                retrieved_doc_ids=[],
+                model_output="",
+                conclusion="retrieval-only: no documents matched",
+            )
+            answer = build_report(record)
+            emit(record, self._audit_path)
+            return ResearchResult(Outcome.OK, answer, [], rid)
+
+        # Synthesis seam (mirrors _research). The question itself is the generator prompt.
+        passages = [f"{hit.text} [{hit.document_id}]" for hit in r.hits]
+        gen = self._generator
+        try:
+            model_output = gen.generate(query, passages)
+        except GeneratorError as exc:
+            # A real generator failed. Fail closed: one terminal record, FETCH_ERROR, never a
+            # silent fallback or a fabricated answer. Only the exception type is recorded.
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: generation failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            # Defense in depth: a generator is injected code, so any failure OTHER than the typed
+            # GeneratorError must still become FETCH_ERROR with exactly one audit record, never an
+            # unhandled 500 with no trail. Only the exception type is recorded (no payload leak).
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: generation failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+
+        # Audit identity comes from the active generator (honest attribution).
+        model_id = getattr(gen, "model_id", "retrieval-only")
+        model_version = getattr(gen, "model_version", "")
+        prompt_template_version = getattr(gen, "prompt_template_version", "")
+
+        record = ResearchRecord(
+            research_id=rid,
+            analyst_id=analyst_id,
+            timestamp=now,
+            objective=objective,
+            data_source_ids=sorted({self._docs[did].source for did in r.ordered_ids}),
+            document_hashes=[self._docs[did].integrity_hash for did in r.ordered_ids],
+            model_id=model_id,
+            model_version=model_version,
+            prompt_template_version=prompt_template_version,
+            retrieved_doc_ids=r.ordered_ids,
+            model_output=model_output,
+            conclusion=f"{model_id}: assembled from cited passages",
+        )
+        # Faithfulness floor: build_report drops any surviving line whose claim does not overlap
+        # its cited passage text — catches a valid-id line with invented content.
+        passages_by_id = {
+            did: [hit.text for hit in r.hits if hit.document_id == did] for did in r.ordered_ids
+        }
+        answer = build_report(record, passages_by_id)
+        emit(record, self._audit_path)
+        return ResearchResult(Outcome.OK, answer, r.citations, rid)
+
     def _emit_terminal(
         self,
         rid: str,

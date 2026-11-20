@@ -103,7 +103,7 @@ def test_citation_ids_recognises_sigma_id():  # Slice 1b G6 — Sigma ids become
     assert citation_ids(f"detection rule fires [{sid}]") == [sid]
 
 
-def test_citation_ids_cve_and_attack_unchanged():  # widening is additive — CVE/ATT&CK parse as before
+def test_citation_ids_cve_and_attack_unchanged():  # additive: CVE/ATT&CK parse as before
     assert citation_ids("a [CVE-2021-44228] b [T1059.001] c") == ["CVE-2021-44228", "T1059.001"]
 
 
