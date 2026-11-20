@@ -64,7 +64,7 @@ or the roadmap phase that completes it.
 | T14 | D1 | **I** | Raw payloads in object store read by an unauthorized party. | 1 | 2 | Low | Loopback-only port binding | Real credentials for shared deploy; encryption-at-rest (`security-controls/encryption`) |
 | T15 | D2 | **T/I** | Direct DB access bypasses the authz gate. | 2 | 3 | High | DB bound to loopback | App-mediated access only; least-privilege DB roles → Phase 2/5 |
 | T16 | D3 | **T** | Registry edited to point at a malicious model or blank a hash. | 1 | 3 | Medium | Version-controlled + code review; verifier fails loud on null hash | Signed registry / approval workflow → Phase 5 |
-| T17 | Supply chain / CI | **T** | Compromised dependency or CI step injects code. | 2 | 3 | High | **Pinned reqs, pip-audit, CycloneDX SBOM (keyed cosign signature, offline-verified in CI), Dependabot** | Keep pins current; review lockfile diffs; `security-controls/supply-chain` |
+| T17 | Supply chain / CI | **T** | Compromised dependency or CI step injects code. | 2 | 3 | High | **Pinned reqs, pip-audit, CycloneDX SBOM (keyed cosign signing wired, offline-verified in CI once signed), Dependabot** | Keep pins current; review lockfile diffs; `security-controls/supply-chain` |
 | T18 | Repo / CI | **S** | A committed secret enables impersonation of a service. | 2 | 3 | High | **gitleaks + detect-private-key pre-commit + `.gitignore`** | Secret scanning in CI; no secrets in `env.example` |
 | T19 | Network | **D/I** | A published service is reachable from the LAN and abused. | 1 | 2 | Low | **All ports bound to `127.0.0.1`** | Auth + network controls before any `0.0.0.0` exposure |
 
@@ -84,7 +84,7 @@ Every STRIDE category is exercised: **S** (T1, T3, T18), **T** (T3, T4, T8, T13�
    beyond localhost without real auth (Keycloak, Phase 5); keep permission checks outside
    the LLM so a convincing model request can't self-authorize.
 4. **Supply-chain & secrets (T17, T18).** Already the strongest area (pinning, pip-audit,
-   signed SBOM, gitleaks). Keep it green; review every lockfile change.
+   SBOM + cosign signing, gitleaks). Keep it green; review every lockfile change.
 5. **Model integrity (T8, T16).** The real control. Never load a model whose hash isn't in
    the registry; a null/mismatched hash must fail loud, not warn.
 

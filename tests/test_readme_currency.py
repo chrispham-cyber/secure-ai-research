@@ -29,11 +29,21 @@ def test_research_endpoints_not_described_as_501():
 
 def test_readme_shows_ci_and_coverage():
     assert "actions/workflows/ci.yml/badge.svg" in _README
-    assert "484" in _README  # unit-test count (the -m "not integration" suite)
+    assert "485" in _README  # unit-test count (the -m "not integration" suite)
 
 
 def test_readme_surfaces_compliance_evidence():
     assert "documentation/assessment-evidence/control-evidence-matrix.md" in _README
+
+
+def test_readme_signing_claim_is_honest_about_pending_ceremony():
+    # The cosign signing mechanism is wired + tested, but NO signature is committed
+    # yet (the one-time key ceremony is pending) and the CI verify gate skips until
+    # then. The README must not present the signature gate as already active, and
+    # must name the ceremony hedge wherever it mentions signing.
+    assert "cosign" in _NORM.lower()  # signing is documented
+    assert "signature gates run in CI" not in _NORM  # the false present-tense claim
+    assert "ceremony" in _NORM.lower()  # ...with the wired-but-pending hedge present
 
 
 def test_now_real_module_docstrings_are_not_stale():

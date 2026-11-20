@@ -23,15 +23,16 @@ concern, not an afterthought.
 **Status:** the platform is built through **Phase 5** of the [roadmap](ROADMAP.md) — the
 full evidence-grounded pipeline (ingestion → retrieval → cited generation → audit), the
 AI-specific controls, the evaluation/red-team harness, and the deploy-and-assurance layer
-(OIDC identity, tamper-evident signed audit chain, at-rest cipher seam, reproducible cosign-signed
-SBOM, STRIDE threat model, and a NIST control→evidence matrix) are all implemented and tested.
+(OIDC identity, tamper-evident signed audit chain, at-rest cipher seam, reproducible SBOM with
+cosign signing wired, STRIDE threat model, and a NIST control→evidence matrix) are all implemented
+and tested.
 The **default path is deterministic, offline, and stdlib-only** — the hermetic suite needs
 no network, database, or model — and every piece of real infrastructure (pgvector, MinIO,
 an OIDC provider, Fernet-at-rest, a live Ollama model) sits behind an **opt-in `SAIR_*`
 seam**. The one remaining fail-loud stub is `OllamaEmbedder` (local *embedding* via Ollama);
 the default `HashingEmbedder` is real and deterministic.
 
-**Tests:** **484 hermetic unit tests** (run in CI with no live services) + **22 integration
+**Tests:** **485 hermetic unit tests** (run in CI with no live services) + **22 integration
 tests** (opt-in, exercised against real Postgres/MinIO/Ollama/Keycloak). Every pushed commit
 runs lint · type · unit · supply-chain in [CI](.github/workflows/ci.yml).
 
@@ -135,9 +136,10 @@ Security is documented as rigorously as it is built. The assurance artifacts are
 - **[System Security Plan](documentation/system-security-plan/system-security-plan.md)** —
   scope, boundary, and control narrative for the PUBLIC lane.
 - **[SBOM & supply chain](documentation/sbom/sbom-guide.md)** — a reproducible CycloneDX SBOM
-  built from the pinned lock, with a SHA-256 integrity manifest and a **keyed, offline cosign
-  signature** verified in CI (public key only), plus `pip-audit`, gitleaks, and Dependabot; the
-  drift/completeness and signature gates run in CI.
+  built from the pinned lock, with a SHA-256 integrity manifest, plus `pip-audit`, gitleaks, and
+  Dependabot; the drift/completeness gate runs in CI. **Keyed, offline cosign signing** is wired
+  (CI verifies the committed signature with the public key only — the gate skips until the
+  one-time key ceremony produces it).
 
 **Opt-in seams** keep the default path dependency-free while letting a real deployment turn on
 real infrastructure: `SAIR_VECTOR_STORE=pgvector`, `SAIR_OBJECT_STORE=minio`,
@@ -166,7 +168,7 @@ secure-ai-research/
 ├── infrastructure/          # containers, identity (roles), model-runtime (registry), otel
 ├── security-controls/       # audit, supply-chain, access-control, encryption, IR (controls → NIST)
 ├── scripts/                 # bootstrap, gen-sbom, hash-model, new_research_record
-├── tests/                   # 484 hermetic unit tests + 22 opt-in integration tests
+├── tests/                   # 485 hermetic unit tests + 22 opt-in integration tests
 ├── docker-compose.yml Makefile pyproject.toml requirements*.txt env.example
 └── .devcontainer/ .github/   # reproducible dev env + CI (lint/type/test/pip-audit/SBOM/gitleaks)
 ```
