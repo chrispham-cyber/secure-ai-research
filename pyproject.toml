@@ -27,7 +27,11 @@ dev = [
     "mypy>=1.13,<2.0",
     "pip-tools>=7.4,<8.0",
     "pip-audit>=2.7,<3.0",
-    "cyclonedx-bom>=4.6,<6.0",
+    "cyclonedx-bom>=9.0,<10.0",
+    # virtualenv (transitive via pre-commit) floored at the PYSEC-2026-4374..4383 fix.
+    # Reachable only because cyclonedx-bom 9.x lifted the packaging<26 cap (see
+    # docs/superpowers/specs/2026-11-20-sbom-tool-bump-virtualenv-fix-design.md).
+    "virtualenv>=21.14.9,<22.0",
     "pre-commit>=4.0,<5.0",
 ]
 # Opt-in Postgres/pgvector backend for the VectorStore seam (SAIR_VECTOR_STORE=pgvector).
