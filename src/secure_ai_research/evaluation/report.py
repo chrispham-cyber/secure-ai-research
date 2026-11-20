@@ -16,8 +16,8 @@ from secure_ai_research.evaluation.thresholds import ThresholdCheck
 _TITLE = "Secure AI Research — Phase 4 Evaluation Report"
 _BANNER = (
     "In-posture evaluation: deterministic, offline, no LLM. Model-behavior evals "
-    "(refusal / hallucination / injection-following) are deferred behind the Generator seam "
-    "(Phase 5) — present and tested with fakes, not run here."
+    "(refusal / hallucination / injection-following) are not included in this report; they run "
+    "as a scripted-baseline CI gate and, against a live model, behind the -m integration marker."
 )
 # Shown instead of _BANNER when a model-behavior section is present (model_checks non-empty).
 _MODEL_BANNER = (
@@ -172,7 +172,8 @@ def render_report(
     """Render the evaluation report as ``(html, markdown)`` — pure, deterministic in its args.
 
     ``model_checks`` is keyword-only and defaults to empty, so every existing positional call is
-    unaffected (the deferred-model banner, no model section). When non-empty, both formats gain a
+    unaffected (the banner states the model-behavior evals are not in this report; no model
+    section). When non-empty, both formats gain a
     "Model-behavior (scripted baseline)" section and the banner discloses the ``-m integration``
     scope — the shipped report is then honest that a real model is not what was scored.
     """

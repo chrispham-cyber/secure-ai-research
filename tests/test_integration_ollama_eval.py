@@ -45,6 +45,8 @@ _QA_GROUNDING_FLOOR = 0.5
 # meaningful non-zero raw hallucination / false refusal without a false CI failure; tighten from a
 # recorded mistral run when one is captured. The scripted CI gate holds the strict 0.0 bound.
 _RAW_HALLUCINATION_CEILING = 0.75
+# Caveat: _is_refusal treats a decline-that-also-cites as non-refusal, so this ceiling can
+# under-count a real model's false refusals (see model_eval._is_refusal). Scripted gate unaffected.
 _FALSE_REFUSAL_CEILING = 0.75
 
 

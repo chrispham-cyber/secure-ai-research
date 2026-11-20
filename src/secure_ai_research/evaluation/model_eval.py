@@ -93,6 +93,12 @@ def _is_refusal(text: str) -> bool:
     A refusal is blank/whitespace, or carries no citation **and** contains a decline marker. A
     grounded answer always carries an ``[id]`` citation, so advisory prose that merely contains
     a marker word ("no information available at this time") is never mistaken for a refusal.
+
+    Trade-off (live ``-m integration`` path only): an output that BOTH declines and cites — e.g.
+    "I cannot help, but see [CVE-2021-44228]." — is treated as non-refusal, so a false refusal
+    that happens to carry a citation is under-counted. The scripted generators never do this, so
+    the hermetic CI gate is unaffected; a real model could, which is one reason its numbers stay
+    behind the integration marker rather than in a hard gate.
     """
     if not text.strip():
         return True

@@ -30,10 +30,14 @@ def test_report_names_every_metric_and_kind_in_both_formats():
         assert "2026-11-19" in blob
 
 
-def test_report_shows_pass_and_the_deferred_banner():
+def test_report_shows_pass_and_the_no_model_section_banner():
     html, md = render_report(evaluate_thresholds(_BASELINE), _BY_KIND, 51, 30, "2026-11-19")
     assert "<html" in html.lower() and "PASS" in html and "PASS" in md
-    assert "deferred" in html.lower() and "deferred" in md.lower()
+    # No model_checks → the banner must NOT stale-claim model evals are "deferred" (they now run
+    # in CI); it says only that the model-behavior section is not part of this particular report.
+    assert "not included in this report" in html.lower()
+    assert "not included in this report" in md.lower()
+    assert "deferred" not in html.lower() and "deferred" not in md.lower()
 
 
 def test_report_marks_fail_when_a_check_fails():
