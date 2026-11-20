@@ -45,6 +45,11 @@ def test_now_real_module_docstrings_are_not_stale():
         assert "documented stub" not in text, f"{mod}/__init__.py still calls itself a stub"
 
 
+def test_readme_names_generator_seam():
+    # the generation opt-in seam must name its env var fully, like the other four SAIR_* seams
+    assert "SAIR_GENERATOR" in _README
+
+
 def test_readme_relative_links_resolve():
     # every relative markdown link resolves on disk (external http(s) and #anchors skipped)
     targets = re.findall(r"\]\(([^)]+)\)", _README)

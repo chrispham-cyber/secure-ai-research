@@ -104,7 +104,7 @@ backends are deterministic and offline; the live backends are opt-in seams.
 |------|----------------------|-----------------|------------------------|
 | Ingestion | Document schema + NVD/KEV/ATT&CK/Sigma loaders | bundled synthetic samples | live NVD fetch |
 | Retrieval | Chunking, embeddings, vector store, **authorize-before-retrieve** | in-memory store + `HashingEmbedder` | `SAIR_VECTOR_STORE=pgvector` |
-| Generation | Cited-answer synthesis, drop-uncited-claims | deterministic join | live `SAIR_` Ollama model |
+| Generation | Cited-answer synthesis (claims id-tagged to a source) | deterministic join | live Ollama model (`SAIR_GENERATOR=ollama`) |
 | Agents | Tool functions with authority checks **outside** the LLM | — | — |
 | Evaluation | Retrieval/answer metrics + synthetic benchmark + injection harness | offline | — |
 | Reporting | Cited-report rendering + citation-faithfulness gate | offline | — |
@@ -140,7 +140,8 @@ Security is documented as rigorously as it is built. The assurance artifacts are
 
 **Opt-in seams** keep the default path dependency-free while letting a real deployment turn on
 real infrastructure: `SAIR_VECTOR_STORE=pgvector`, `SAIR_OBJECT_STORE=minio`,
-`SAIR_AUTH=oidc`, `SAIR_CIPHER=fernet`. All published ports bind to `127.0.0.1`.
+`SAIR_AUTH=oidc`, `SAIR_CIPHER=fernet`, `SAIR_GENERATOR=ollama`. All published ports bind
+to `127.0.0.1`.
 
 ## Repository map
 
