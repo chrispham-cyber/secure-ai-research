@@ -62,9 +62,7 @@ class MinioObjectStore:
         try:
             from minio import Minio
         except ImportError as exc:
-            raise ObjectStoreError(
-                "minio extra not installed: pip install '.[minio]'"
-            ) from exc
+            raise ObjectStoreError("minio extra not installed: pip install '.[minio]'") from exc
         return Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
 
     def _ensure_bucket(self) -> None:

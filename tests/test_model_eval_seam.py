@@ -55,6 +55,5 @@ def test_measure_qa_eval_discriminates(tmp_path):  # Slice 1b: the QA eval is wi
     # Not a constant: a generator whose every line is forged collapses every answer to
     # "No cited findings." — zero grounded answers (grounding stays vacuously 1.0 with no claims).
     assert (
-        adversarial["grounding"] < grounded["grounding"]
-        or adversarial["grounded_answers"] == 0.0
+        adversarial["grounding"] < grounded["grounding"] or adversarial["grounded_answers"] == 0.0
     )

@@ -29,3 +29,8 @@ def test_virtualenv_advisory_is_fixed():
 def test_sbom_generator_major_is_9x():
     v = _pinned("cyclonedx-bom")
     assert Version("9.0") <= v < Version("10.0")
+
+
+def test_black_advisory_is_fixed():
+    # PYSEC-2026-2120/2121 (26.3.x) + CVE-2026-114134 (26.10.1)
+    assert _pinned("black") >= Version("26.10.1")

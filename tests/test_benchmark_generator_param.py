@@ -23,7 +23,9 @@ def test_build_benchmark_service_default_is_deterministic(tmp_path):
 def test_build_benchmark_service_accepts_generator(tmp_path):
     items = benchmark_items()
     explicit = aggregate(
-        run_benchmark(build_benchmark_service(tmp_path / "a.jsonl", generator=JoinGenerator()), items)
+        run_benchmark(
+            build_benchmark_service(tmp_path / "a.jsonl", generator=JoinGenerator()), items
+        )
     )
     default = aggregate(run_benchmark(build_benchmark_service(tmp_path / "b.jsonl"), items))
     assert explicit == default
