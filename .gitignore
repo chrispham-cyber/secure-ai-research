@@ -22,7 +22,10 @@ secrets/
 # Research data & model weights  (public/synthetic only — never commit data or weights)
 data/
 models/
-audit/
+# Runtime audit-log output only (default SAIR_AUDIT_LOG_PATH = audit/research-records.jsonl,
+# written at the repo root). Root-anchored so it does NOT swallow the src/.../audit/ SOURCE
+# package — an unanchored `audit/` previously left the entire audit module out of the repo.
+/audit/
 *.sbom.json
 sbom.json
 
