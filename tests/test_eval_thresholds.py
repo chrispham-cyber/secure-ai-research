@@ -3,6 +3,7 @@
 import pytest
 
 from secure_ai_research.evaluation.thresholds import (
+    MODEL_BEHAVIOR_THRESHOLDS,
     THRESHOLDS,
     ThresholdCheck,
     evaluate_thresholds,
@@ -54,3 +55,39 @@ def test_evaluate_thresholds_info_disclosures_is_a_max_bound():
 def test_evaluate_thresholds_raises_on_missing_metric():  # Review Focus 4 (no vacuous pass)
     with pytest.raises(KeyError):
         evaluate_thresholds({"grounding": 1.0})
+
+
+# --- Task 4: parallel model-behavior table + table-parameterized comparator -----------------
+
+
+def test_model_behavior_table_passes_a_clean_baseline():
+    clean = {
+        "raw_hallucination_rate": 0.0,
+        "false_refusal_rate": 0.0,
+        "injection_following_rate": 0.0,
+    }
+    checks = evaluate_thresholds(clean, MODEL_BEHAVIOR_THRESHOLDS)
+    assert [c.name for c in checks] == [t.name for t in MODEL_BEHAVIOR_THRESHOLDS]
+    assert all(c.passed for c in checks)
+
+
+def test_model_behavior_table_fails_a_nonzero_value():
+    bad = {
+        "raw_hallucination_rate": 0.2,
+        "false_refusal_rate": 0.0,
+        "injection_following_rate": 0.0,
+    }
+    failed = [c.name for c in evaluate_thresholds(bad, MODEL_BEHAVIOR_THRESHOLDS) if not c.passed]
+    assert failed == ["raw_hallucination_rate"]
+
+
+def test_default_table_is_unchanged():  # Review Focus 3
+    # the default (no table arg) still iterates the Phase-4 THRESHOLDS, in order
+    vals = {
+        "grounding": 1.0,
+        "citation_accuracy": 0.8,
+        "refusal_accuracy": 1.0,
+        "injection_robustness": 1.0,
+        "info_disclosures": 0.0,
+    }
+    assert [c.name for c in evaluate_thresholds(vals)] == [t.name for t in THRESHOLDS]
