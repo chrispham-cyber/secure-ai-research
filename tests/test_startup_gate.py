@@ -9,6 +9,7 @@ from secure_ai_research.api.deps import get_service
 from secure_ai_research.api.main import app
 from secure_ai_research.audit.signing import verify_chain
 from secure_ai_research.config import get_settings
+from secure_ai_research.secret.ports import SecretError
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +32,10 @@ def test_startup_prod_weak_secret_refuses_boot(monkeypatch):
     monkeypatch.setenv("SAIR_REQUIRE_STRONG_SECRETS", "true")  # audit key is still the placeholder
     get_settings.cache_clear()
     get_service.cache_clear()
-    with pytest.raises(Exception):  # lifespan verify_secrets raises -> context-enter fails
+    # lifespan verify_secrets raises SecretError -> TestClient context-enter re-raises it.
+    # Asserting the specific type (not a blind Exception) pins the security contract: a weak
+    # prod secret fails closed *as a SecretError*, not merely "something broke" (ruff B017).
+    with pytest.raises(SecretError):
         with TestClient(app):
             pass
 
