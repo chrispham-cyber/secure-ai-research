@@ -45,3 +45,12 @@ class VectorStore(Protocol):
     def query(
         self, embedding: list[float], *, allowed_document_ids: set[str], limit: int
     ) -> list[ChunkHit]: ...
+
+
+class VectorStoreError(Exception):
+    """Raised by a VectorStore adapter when the backing store is unavailable or a query fails.
+
+    The sibling of ``generation.ports.GeneratorError``: the service treats it (and any other
+    exception from an injected store) as a fail-closed ``FETCH_ERROR`` with one audit record,
+    recording only the exception type so a backend message can never leak into the trail.
+    """

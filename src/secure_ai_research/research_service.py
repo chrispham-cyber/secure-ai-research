@@ -30,7 +30,13 @@ from secure_ai_research.ingestion.source import CveNotFound, CveUnavailable
 from secure_ai_research.reporting.report import build_report
 from secure_ai_research.retrieval.authz import may_live_fetch
 from secure_ai_research.retrieval.chunking import chunk
-from secure_ai_research.retrieval.ports import ChunkHit, ChunkRecord, Embedder, VectorStore
+from secure_ai_research.retrieval.ports import (
+    ChunkHit,
+    ChunkRecord,
+    Embedder,
+    VectorStore,
+    VectorStoreError,
+)
 
 
 class Outcome(StrEnum):
@@ -206,11 +212,36 @@ class ResearchService:
                 )
                 return ResearchResult(Outcome.NOT_FOUND, "", [], rid)
 
-        hits = self._store.query(
-            self._embedder.embed([doc_id])[0],
-            allowed_document_ids=scope,
-            limit=self._limit,
-        )
+        try:
+            hits = self._store.query(
+                self._embedder.embed([doc_id])[0],
+                allowed_document_ids=scope,
+                limit=self._limit,
+            )
+        except VectorStoreError as exc:
+            # The vector store is unavailable / the query failed. Fail closed, mirroring the
+            # generator path: one terminal audit record, FETCH_ERROR, only the exception type
+            # recorded so a backend message cannot leak.
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            # Defense in depth: the store is injected via Protocol/factory, so any failure OTHER
+            # than the typed VectorStoreError must still become FETCH_ERROR with exactly one audit
+            # record, never an unhandled 500 that leaves no trail. Only the exception type is kept.
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
 
         ordered_ids: list[str] = []
         first_text: dict[str, str] = {}
@@ -349,7 +380,28 @@ class ResearchService:
         now = datetime.now(UTC)
         objective = f'Search corpus for "{query}"'
 
-        r = self._retrieve_corpus(query, role, limit)
+        # Fail closed if the vector store is unavailable (same contract as _research): one
+        # terminal record, FETCH_ERROR, only the exception type. Typed arm then defense-in-depth.
+        try:
+            r = self._retrieve_corpus(query, role, limit)
+        except VectorStoreError as exc:
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
         if not r.allowed:
             self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
             return ResearchResult(Outcome.DENIED, "", [], rid)
@@ -399,7 +451,28 @@ class ResearchService:
         now = datetime.now(UTC)
         objective = f'Answer question: "{query}"'
 
-        r = self._retrieve_corpus(query, role, limit)
+        # Fail closed if the vector store is unavailable (same contract as _research): one
+        # terminal record, FETCH_ERROR, only the exception type. Typed arm then defense-in-depth.
+        try:
+            r = self._retrieve_corpus(query, role, limit)
+        except VectorStoreError as exc:
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
+        except Exception as exc:
+            self._emit_terminal(
+                rid,
+                analyst_id,
+                objective,
+                now,
+                f"fetch_error: retrieval failed ({type(exc).__name__})",
+            )
+            return ResearchResult(Outcome.FETCH_ERROR, "", [], rid)
         if not r.allowed:
             self._emit_terminal(rid, analyst_id, objective, now, "denied: no corpus retrieved")
             return ResearchResult(Outcome.DENIED, "", [], rid)
