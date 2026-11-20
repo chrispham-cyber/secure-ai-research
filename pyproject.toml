@@ -46,6 +46,12 @@ minio = [
 oidc = [
     "pyjwt[crypto]>=2.9,<3.0",
 ]
+# Opt-in at-rest encryption (SAIR_CIPHER=fernet). Kept out of the base install so the default
+# NullCipher path stays stdlib-only; the hermetic suite never imports `cryptography` — only the
+# -m integration Fernet round-trip and a live deployment do.
+crypto = [
+    "cryptography>=43,<47",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
