@@ -20,7 +20,7 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
-black==25.12.0
+black==26.10.1
     # via secure-ai-research (pyproject.toml)
 boolean-py==5.0
     # via license-expression

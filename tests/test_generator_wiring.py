@@ -132,7 +132,9 @@ def test_injected_generator_identity_lands_in_audit(tmp_path):
     assert rec.conclusion == "ollama: assembled from cited passages"
 
 
-def test_generator_failure_is_fetch_error(tmp_path):  # design §10 Q1 — fail-closed, no silent fallback
+def test_generator_failure_is_fetch_error(
+    tmp_path,
+):  # design §10 Q1 — fail-closed, no silent fallback
     svc = _mini_service(tmp_path, _FailingGen())
     res = svc.research_cve(_TARGET, role="research_analyst")
     assert res.outcome is Outcome.FETCH_ERROR
@@ -158,7 +160,9 @@ class _AdversarialGen:
         )
 
 
-def test_generator_non_generator_error_is_fetch_error(tmp_path):  # review: defense-in-depth invariant
+def test_generator_non_generator_error_is_fetch_error(
+    tmp_path,
+):  # review: defense-in-depth invariant
     # A generator failing with anything OTHER than GeneratorError must STILL become FETCH_ERROR
     # with exactly one audit record — never an unhandled 500 that leaves no audit trail (mirrors
     # the injected-fetcher path's `except Exception`). Here the failure is a bare ValueError.
