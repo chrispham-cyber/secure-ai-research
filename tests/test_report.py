@@ -90,3 +90,22 @@ def test_markdown_brackets_not_citations():
 def test_uncited_technique_line_dropped():
     rec = _record(retrieved_doc_ids=["T1059"], model_output="Claim citing [T9999]")
     assert "No cited findings." in build_report(rec)
+
+
+def test_citation_ids_recognises_kev_id():  # Slice 1b G6 — KEV ids become citable
+    assert citation_ids("Log4Shell is known-exploited [KEV-CVE-2021-44228]") == [
+        "KEV-CVE-2021-44228"
+    ]
+
+
+def test_citation_ids_recognises_sigma_id():  # Slice 1b G6 — Sigma ids become citable
+    sid = "SIGMA-ca2092a1-c273-4878-9b4b-0d60115bf5ea"
+    assert citation_ids(f"detection rule fires [{sid}]") == [sid]
+
+
+def test_citation_ids_cve_and_attack_unchanged():  # widening is additive — CVE/ATT&CK parse as before
+    assert citation_ids("a [CVE-2021-44228] b [T1059.001] c") == ["CVE-2021-44228", "T1059.001"]
+
+
+def test_citation_ids_still_ignores_non_citation_brackets():  # tactic/CWE/markdown still excluded
+    assert citation_ids("see [TA0001] and [CWE-79] and [text](url)") == []

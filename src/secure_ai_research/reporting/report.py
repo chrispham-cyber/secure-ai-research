@@ -19,9 +19,16 @@ if TYPE_CHECKING:
 # claim. Matching only the id shape (not any `[...]`) keeps bracket tokens in the
 # passage body — buf[256], [CWE-79], markdown links like [Phishing](url), tactic
 # ids like [TA0001] — from being mistaken for citations and silently dropping a
-# legitimately cited line. Two id schemes flow through build_report: NVD CVE ids
-# and MITRE ATT&CK technique ids (T#### and sub-techniques T####.###).
-_CITATION = re.compile(r"\[(CVE-\d{4}-\d{4,}|T\d{4}(?:\.\d{3})?)\]")
+# legitimately cited line. Four id schemes flow through build_report: NVD CVE ids,
+# MITRE ATT&CK technique ids (T#### and sub-techniques T####.###), CISA KEV ids
+# (KEV-CVE-…, namespaced in kev.py), and Sigma rule ids (SIGMA-<uuid>, namespaced in
+# sigma.py). The KEV-CVE- alternative precedes bare CVE- so the longer id wins; the
+# `[`-anchor already prevents a bare-CVE match inside [KEV-CVE-…]. Widening is purely
+# additive — the id-routes and search emit no KEV/Sigma bracket tokens, so their
+# output and the Phase-4 metric inputs are unchanged (Slice 1b design §11).
+_CITATION = re.compile(
+    r"\[(KEV-CVE-\d{4}-\d{4,}|SIGMA-[0-9a-fA-F-]+|CVE-\d{4}-\d{4,}|T\d{4}(?:\.\d{3})?)\]"
+)
 
 
 def citation_ids(text: str) -> list[str]:
