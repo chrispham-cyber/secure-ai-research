@@ -3,16 +3,25 @@
 > _Scope: PUBLIC / synthetic data only._
 
 ## What and where
-A **CycloneDX** Software Bill of Materials inventories every installed dependency and
-version. Generate it with:
+A **CycloneDX** Software Bill of Materials inventories every dependency and version. There are
+two, for two jobs:
 
 ```bash
-make sbom      # writes sbom.json for the current environment
+make sbom-release   # the release SBOM: reproducible, from the pinned lock, committed + gated
+make sbom           # dev convenience: the current virtualenv, git-ignored, non-reproducible
 ```
 
-CI produces the same `sbom.json` on every run and uploads it as a build artifact.
-`sbom.json` is **git-ignored** — it is a build output, regenerated on demand, archived with
-each release rather than committed.
+- **`make sbom-release`** builds `sbom/release-sbom.cdx.json` from the pinned runtime lock
+  `requirements.txt` (`cyclonedx-py requirements --output-reproducible`) and writes
+  `sbom/sbom.manifest.json`, a **SHA-256 pin** over a canonical `{name, version, purl}`
+  projection. Both are **committed**. `tests/test_sbom.py` regenerates from the lock and fails CI
+  if the digest, the manifest, or the completeness check drifts — so a dependency change that is
+  not re-attested (`make sbom-release` + commit) turns CI red. Run it whenever the runtime lock
+  changes.
+- **`make sbom`** writes `sbom.json` for the *current* environment; it is **git-ignored** (a
+  throwaway inventory, dev tools included), never the release artifact.
+
+CI regenerates the release SBOM on every run and uploads `sbom/` as a build artifact.
 
 ## How to read it
 - `components[]` — each dependency: `name`, `version`, `purl`, `licenses`.

@@ -41,16 +41,19 @@ jobs:
         continue-on-error: true
         run: pip-audit
 
-      - name: SBOM (CycloneDX)
+      # Reproducible release SBOM from the pinned lock + SHA-256 integrity manifest.
+      # The drift/completeness gate is the pytest step above (tests/test_sbom.py); this
+      # step only refreshes the uploaded artifact, so it stays advisory.
+      - name: SBOM (reproducible release)
         continue-on-error: true
-        run: cyclonedx-py environment -o sbom.json
+        run: python -m secure_ai_research.supply_chain.sbom
 
       - name: Upload SBOM
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sbom
-          path: sbom.json
+          path: sbom/
           if-no-files-found: ignore
 
   secret-scan:

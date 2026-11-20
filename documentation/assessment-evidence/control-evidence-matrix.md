@@ -22,7 +22,7 @@ so this matrix cannot drift from the code.
 | **SI-10** Information input validation | Prompt-injection neutralization: labelled corpus + pipeline-safety harness drop forged citations / impersonation | `src/secure_ai_research/evaluation/injection_corpus.py` | `tests/test_injection_harness.py::test_forged_citation_id_absent_from_report` | met |
 | **SI-7** Software / model integrity | SHA-256 model-hash verification against a pinned registry | `src/secure_ai_research/ai_security/model_integrity/verify_model.py` | `tests/test_verify_model.py::test_verify_mismatch_fails` | met |
 | **CM-2 / CM-6** Baseline & configuration | Pinned dependencies, pre-commit hooks, and a CI suite that runs the whole test battery incl. this matrix | `.github/workflows/ci.yml` | config review (every CI run) | partial — no formal baseline doc |
-| **SR-3** Supply-chain protection | SBOM + dependency scan (`cyclonedx-bom`, `pip-audit`) in the release pipeline | `documentation/sbom/sbom-guide.md` | planned — delivered in Slice 7 (Week 20) | planned |
+| **SR-3** Supply-chain protection | Reproducible release SBOM from the pinned lock, SHA-256-pinned in a committed manifest; a dependency change that is not re-attested fails CI (guide: `documentation/sbom/sbom-guide.md`) | `src/secure_ai_research/supply_chain/sbom.py` | `tests/test_sbom.py::test_sbom_covers_every_pinned_runtime_dependency`, `tests/test_sbom.py::test_committed_sbom_matches_regeneration` | met |
 | **IR-8** Incident response | Incident-response runbook under the security-controls set | `security-controls/incident-response/README.md` | doc review | partial — runbook present, not exercised |
 
 ## Guidance
