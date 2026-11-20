@@ -40,6 +40,12 @@ pgvector = [
 minio = [
     "minio>=7.2,<8.0",
 ]
+# Opt-in OIDC/RS256 identity (SAIR_AUTH=oidc). Kept out of the base install so the default
+# `local` HS256 path stays stdlib-only; the hermetic suite never imports `jwt` — only the
+# -m integration Keycloak test and a live deployment do.
+oidc = [
+    "pyjwt[crypto]>=2.9,<3.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

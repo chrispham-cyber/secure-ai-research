@@ -7,13 +7,25 @@ Run explicitly with ``.venv/bin/python -m pytest -m integration``. Keyless; skip
 import pytest
 from fastapi.testclient import TestClient
 
-from secure_ai_research.api.deps import get_service
+from _authtokens import mint_hs256, pinned_local_identity
+from secure_ai_research.api.deps import get_identity_provider, get_service
 from secure_ai_research.api.main import app
 from secure_ai_research.config import get_settings
 from secure_ai_research.ingestion import nvd
 from secure_ai_research.ingestion.fetch_cve import research_from_source
 from secure_ai_research.ingestion.nvd_source import CachingCveSource, NvdApiSource
 from secure_ai_research.research_service import Outcome
+
+
+def _bearer(role: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {mint_hs256(role)}"}
+
+
+@pytest.fixture(autouse=True)
+def _pin_identity():
+    app.dependency_overrides[get_identity_provider] = pinned_local_identity
+    yield
+    app.dependency_overrides.pop(get_identity_provider, None)
 
 
 @pytest.mark.integration
@@ -45,7 +57,7 @@ def test_live_endpoint_fetches_real_cve(tmp_path, monkeypatch):
     get_service.cache_clear()
     try:
         resp = TestClient(app).get(
-            "/research/cve/CVE-2021-44228", headers={"X-Role": "senior_analyst"}
+            "/research/cve/CVE-2021-44228", headers=_bearer("senior_analyst")
         )
         # A network failure surfaces through the wired service as CveUnavailable →
         # FETCH_ERROR → 503 (not a bubbling exception), so skip on 503 rather than fail

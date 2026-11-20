@@ -64,6 +64,25 @@ class Settings(BaseSettings):
     # pinned to PUBLIC on purpose; an LLM never decides a document's class.
     data_classification: Literal["PUBLIC"] = "PUBLIC"
 
+    # --- Identity / authentication (Slice 4) ---
+    # Auth mode. "local" (default) verifies a Bearer HS256 token with auth_dev_secret — offline,
+    # stdlib, no Keycloak needed, and the role is *authenticated* not self-asserted. "oidc"
+    # verifies an RS256 token against a Keycloak realm (opt-in, requires the `oidc` extra).
+    # "insecure" restores the pre-Slice-4 self-asserted X-Role header (dev only; factory warns).
+    auth: Literal["local", "oidc", "insecure"] = "local"
+    # Shared secret for `local` HS256 verification. The default is a well-known placeholder; the
+    # identity factory fails closed on it (and on any secret < 16 chars) unless
+    # auth_allow_dev_secret is set, so a real deployment must override SAIR_AUTH_DEV_SECRET.
+    auth_dev_secret: str = "dev-insecure-change-me-not-for-production"
+    auth_allow_dev_secret: bool = False
+    # The token claim carrying the role string (both local and oidc).
+    auth_role_claim: str = "role"
+    # OIDC/Keycloak resource-server settings (used only when auth == "oidc").
+    oidc_issuer: str = "http://localhost:8080/realms/sair"
+    oidc_jwks_url: str = "http://localhost:8080/realms/sair/protocol/openid-connect/certs"
+    oidc_audience: str = "sair-api"
+    oidc_timeout: float = 5.0
+
 
 @lru_cache
 def get_settings() -> Settings:

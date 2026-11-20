@@ -18,11 +18,11 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Path
+from fastapi import APIRouter, Depends, Path
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 
-from secure_ai_research.api.deps import get_service
+from secure_ai_research.api.deps import get_role, get_service
 from secure_ai_research.research_service import Outcome, ResearchService
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -31,18 +31,18 @@ router = APIRouter(prefix="/research", tags=["research"])
 @router.get("/cve/{cve_id}")
 def research_cve(
     cve_id: str = Path(pattern=r"^CVE-\d{4}-\d{4,}$"),
-    x_role: str = Header(default=""),
+    role: str = Depends(get_role),
     service: ResearchService = Depends(get_service),
 ) -> JSONResponse:
     """Correlate a CVE against public sources, grounded in cited passages.
 
-    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an
-    authentication control** — a client sets it freely (threat T1). It exists only
-    to exercise the authorization boundary; Phase 5 replaces it with verified OIDC
-    roles, downstream authz unchanged (see ``infrastructure/identity/roles.md``). Do
-    not expose this route on a real network until then.
+    SECURITY: the caller's role comes from ``get_role`` — it verifies a signed Bearer token
+    (local HS256 by default, OIDC/RS256 when configured). A missing or rejected credential is
+    401 and an unavailable identity backend is 503, both before this handler runs; ``X-Role`` is
+    honoured only in the off-by-default ``insecure`` dev mode. Downstream authz is unchanged (see
+    ``infrastructure/identity/roles.md``).
     """
-    res = service.research_cve(cve_id, role=x_role)
+    res = service.research_cve(cve_id, role=role)
     if res.outcome is Outcome.OK:
         return JSONResponse(
             status_code=200,
@@ -71,7 +71,7 @@ def research_cve(
 @router.get("/attack/{technique_id}")
 def research_attack(
     technique_id: str = Path(pattern=r"^T\d{4}(\.\d{3})?$"),
-    x_role: str = Header(default=""),
+    role: str = Depends(get_role),
     service: ResearchService = Depends(get_service),
 ) -> JSONResponse:
     """Explain a MITRE ATT&CK technique, grounded in cited passages.
@@ -81,13 +81,13 @@ def research_attack(
     outage: once the shared store can fail at request time, a store outage surfaces as 503
     rather than being masked as a 404.
 
-    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an
-    authentication control** — a client sets it freely (threat T1). It exists only
-    to exercise the authorization boundary; Phase 5 replaces it with verified OIDC
-    roles, downstream authz unchanged (see ``infrastructure/identity/roles.md``). Do
-    not expose this route on a real network until then.
+    SECURITY: the caller's role comes from ``get_role`` — it verifies a signed Bearer token
+    (local HS256 by default, OIDC/RS256 when configured). A missing or rejected credential is
+    401 and an unavailable identity backend is 503, both before this handler runs; ``X-Role`` is
+    honoured only in the off-by-default ``insecure`` dev mode. Downstream authz is unchanged (see
+    ``infrastructure/identity/roles.md``).
     """
-    res = service.research_attack(technique_id, role=x_role)
+    res = service.research_attack(technique_id, role=role)
     if res.outcome is Outcome.OK:
         return JSONResponse(
             status_code=200,
@@ -125,7 +125,7 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 def research_search(
     req: SearchRequest,
-    x_role: str = Header(default=""),
+    role: str = Depends(get_role),
     service: ResearchService = Depends(get_service),
 ) -> JSONResponse:
     """Ranked, cited search over the authorized corpus.
@@ -134,13 +134,13 @@ def research_search(
     valid 200, not 404) and 403 when the caller's role may retrieve nothing. Each result
     carries a 1-based ``rank``; the internal cosine score is never surfaced.
 
-    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an
-    authentication control** — a client sets it freely (threat T1). It exists only to
-    exercise the authorization boundary; Phase 5 replaces it with verified OIDC roles,
-    downstream authz unchanged (see ``infrastructure/identity/roles.md``). Do not expose
-    this route on a real network until then.
+    SECURITY: the caller's role comes from ``get_role`` — it verifies a signed Bearer token
+    (local HS256 by default, OIDC/RS256 when configured). A missing or rejected credential is
+    401 and an unavailable identity backend is 503, both before this handler runs; ``X-Role`` is
+    honoured only in the off-by-default ``insecure`` dev mode. Downstream authz is unchanged (see
+    ``infrastructure/identity/roles.md``).
     """
-    res = service.search(req.query, role=x_role, limit=req.limit)
+    res = service.search(req.query, role=role, limit=req.limit)
     if res.outcome is Outcome.DENIED:
         return JSONResponse(
             status_code=403,
@@ -175,7 +175,7 @@ class AskRequest(BaseModel):
 @router.post("/ask")
 def research_ask(
     req: AskRequest,
-    x_role: str = Header(default=""),
+    role: str = Depends(get_role),
     service: ResearchService = Depends(get_service),
 ) -> JSONResponse:
     """Answer a free-text question with a grounded, cited report over the authorized corpus.
@@ -187,13 +187,13 @@ def research_ask(
     no audit record. The citations carry the cited id, source url, and passage — never the
     internal retrieval score.
 
-    SECURITY: ``X-Role`` is a Phase-1 **self-asserted development stub, not an authentication
-    control** — a client sets it freely (threat T1). It exists only to exercise the
-    authorization boundary; Phase 5 replaces it with verified OIDC roles, downstream authz
-    unchanged (see ``infrastructure/identity/roles.md``). Do not expose this route on a real
-    network until then.
+    SECURITY: the caller's role comes from ``get_role`` — it verifies a signed Bearer token
+    (local HS256 by default, OIDC/RS256 when configured). A missing or rejected credential is
+    401 and an unavailable identity backend is 503, both before this handler runs; ``X-Role`` is
+    honoured only in the off-by-default ``insecure`` dev mode. Downstream authz is unchanged (see
+    ``infrastructure/identity/roles.md``).
     """
-    res = service.ask(req.query, role=x_role, limit=req.limit)
+    res = service.ask(req.query, role=role, limit=req.limit)
     if res.outcome is Outcome.DENIED:
         return JSONResponse(
             status_code=403,
