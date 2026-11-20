@@ -15,6 +15,7 @@ from importlib.resources import files
 from fastapi import Depends, Header, HTTPException
 
 from secure_ai_research.config import get_settings
+from secure_ai_research.crypto.factory import make_cipher
 from secure_ai_research.generation.factory import make_generator
 from secure_ai_research.identity.factory import make_identity_provider
 from secure_ai_research.identity.ports import AuthError, IdentityProvider, IdentityUnavailable
@@ -26,6 +27,7 @@ from secure_ai_research.research_service import ResearchService
 from secure_ai_research.retrieval.authz import authorize
 from secure_ai_research.retrieval.embeddings import HashingEmbedder
 from secure_ai_research.retrieval.factory import make_vector_store
+from secure_ai_research.secret.factory import make_secret_provider
 from secure_ai_research.storage.factory import make_object_store
 
 
@@ -61,6 +63,10 @@ def get_service() -> ResearchService:
 
         fetch_missing = _fetch_missing
 
+    # Resolve the managed audit-signing key (and optional at-rest cipher) from the secret provider
+    # so the audit chain is signed with the configured key, not the dev default. verify_secrets
+    # (startup gate) refuses a placeholder key in prod.
+    provider = make_secret_provider(settings)
     service = ResearchService(
         HashingEmbedder(),
         make_vector_store(settings),
@@ -69,6 +75,8 @@ def get_service() -> ResearchService:
         fetch_missing=fetch_missing,
         generator=make_generator(settings),
         object_store=make_object_store(settings),
+        audit_key=provider.require("audit_signing_key"),
+        audit_cipher=make_cipher(settings, provider),
     )
     raw = files("secure_ai_research.ingestion").joinpath("samples", "nvd_sample.json").read_bytes()
     service.index(nvd.load(raw))
