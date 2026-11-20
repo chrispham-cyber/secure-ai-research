@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from secure_ai_research.config import Settings
+from secure_ai_research.secret.env import EnvSecretProvider
 from secure_ai_research.secret.ports import SecretError, SecretProvider
 
 # The well-known dev placeholders (config defaults). A secret containing any of these, or shorter
@@ -50,17 +51,27 @@ def verify_secrets(settings: Settings, provider: SecretProvider) -> None:
     if not settings.require_strong_secrets:
         return
 
-    # auth_dev_secret is checked regardless of auth_allow_dev_secret: prod overrides the opt-in.
-    checks: list[str] = ["auth_dev_secret", "audit_signing_key"]
+    # Each secret is validated against the source its consumer ACTUALLY reads. Only the audit
+    # secrets are wired through the SecretProvider seam (deps.get_service / make_cipher); the
+    # auth/db/minio consumers still read Settings directly, so they are checked via the env source
+    # — otherwise a SAIR_SECRET_PROVIDER=file deployment gets a false green off a file the app
+    # never uses while it runs on the env placeholders. auth_dev_secret is checked regardless of
+    # auth_allow_dev_secret: prod overrides the opt-in.
+    env: SecretProvider = EnvSecretProvider(settings)
+    checks: list[tuple[str, SecretProvider]] = [
+        ("auth_dev_secret", env),
+        ("audit_signing_key", provider),
+    ]
     if settings.vector_store == "pgvector":
-        checks.append("db_url")
+        checks.append(("db_url", env))
     if settings.object_store == "minio":
-        checks.extend(("minio_access_key", "minio_secret_key"))
+        checks.append(("minio_access_key", env))
+        checks.append(("minio_secret_key", env))
     if settings.cipher == "fernet":
-        checks.append("audit_encryption_key")
+        checks.append(("audit_encryption_key", provider))
 
-    for name in checks:
-        if _is_weak(provider.get(name)):
+    for name, source in checks:
+        if _is_weak(source.get(name)):
             raise SecretError(
                 f"{name} is a placeholder or too weak for production; "
                 f"set a strong SAIR_{name.upper()}"

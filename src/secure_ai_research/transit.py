@@ -20,6 +20,21 @@ def _is_loopback(host: str) -> bool:
     return host in _LOOPBACK
 
 
+def _host(endpoint: str) -> str:
+    """Host of a ``host:port`` endpoint (no scheme), IPv6-safe. ``[::1]:9000`` -> ``::1``."""
+    return urlsplit(f"//{endpoint}").hostname or ""
+
+
+def _effective_sslmode(db_url: str, db_sslmode: str) -> str:
+    """The sslmode the DSN will actually use: the explicit knob, else the DSN's own query value."""
+    if db_sslmode:
+        return db_sslmode
+    for part in urlsplit(db_url).query.split("&"):
+        if part.startswith("sslmode="):
+            return part[len("sslmode=") :]
+    return ""
+
+
 def apply_sslmode(db_url: str, sslmode: str) -> str:
     """Append ``sslmode=<sslmode>`` to a Postgres DSN, unless empty or already present."""
     if not sslmode or "sslmode=" in db_url:
@@ -38,7 +53,9 @@ def check_transit_posture(settings: Settings) -> list[str]:
 
     if settings.vector_store == "pgvector":
         host = urlsplit(settings.db_url).hostname or ""
-        has_tls = "sslmode=require" in settings.db_url or settings.db_sslmode == "require"
+        # Any sslmode other than the empty default or an explicit "disable" encrypts the link;
+        # verify-ca/verify-full are stronger than require and must not be read as "no TLS".
+        has_tls = _effective_sslmode(settings.db_url, settings.db_sslmode) not in ("", "disable")
         if not _is_loopback(host) and not has_tls:
             warnings.append(
                 f"pgvector DSN host {host!r} is not loopback and has no TLS; "
@@ -46,7 +63,7 @@ def check_transit_posture(settings: Settings) -> list[str]:
             )
 
     if settings.object_store == "minio":
-        host = settings.minio_endpoint.split(":")[0]
+        host = _host(settings.minio_endpoint)
         if not _is_loopback(host) and not settings.minio_secure:
             warnings.append(
                 f"MinIO endpoint {host!r} is not loopback and not TLS; set SAIR_MINIO_SECURE=true"
@@ -56,7 +73,7 @@ def check_transit_posture(settings: Settings) -> list[str]:
         parts = urlsplit(settings.oidc_issuer)
         if not _is_loopback(parts.hostname or "") and parts.scheme == "http":
             warnings.append(
-                f"OIDC issuer {settings.oidc_issuer!r} uses http over a non-loopback host; use https"
+                f"OIDC issuer {settings.oidc_issuer!r} uses http (non-loopback); use https"
             )
 
     return warnings

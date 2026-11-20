@@ -59,5 +59,23 @@ def test_verify_secrets_overrides_auth_allow_dev_secret():
         verify_secrets(s, make_secret_provider(s))
 
 
+def test_verify_secrets_file_provider_checks_the_source_each_consumer_uses(tmp_path):
+    # Only the audit secret is wired through the SecretProvider seam; make_object_store reads
+    # Settings directly. With strong secrets in the files but the minio placeholder still in
+    # Settings, the gate must fail on the source the consumer ACTUALLY uses (env), not give a false
+    # green off the file it validated.
+    for name in ("audit_signing_key", "auth_dev_secret", "minio_access_key", "minio_secret_key"):
+        (tmp_path / name).write_text("strong-file-value-0123456789")
+    s = Settings(
+        require_strong_secrets=True,
+        secret_provider="file",
+        secret_dir=tmp_path,
+        object_store="minio",
+        auth_dev_secret="z" * 32,  # strong in Settings too, so minio is the lone weak env secret
+    )
+    with pytest.raises(SecretError, match="minio"):
+        verify_secrets(s, make_secret_provider(s))
+
+
 def test_redact_replaces_known_secret():
     assert "s3kr3t" not in redact("token=s3kr3t end", ["s3kr3t"])

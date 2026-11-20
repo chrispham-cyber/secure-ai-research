@@ -31,6 +31,22 @@ def test_non_loopback_minio_without_tls_warns():
     assert check_transit_posture(s) != []
 
 
+def test_sslmode_verify_full_counts_as_tls():
+    # verify-full is STRONGER than require; it must not be read as "no TLS" (which would refuse the
+    # most secure prod config at boot and misdirect the operator to the weaker require mode).
+    s = Settings(
+        vector_store="pgvector",
+        db_url="postgresql://u:p@db.example.com:5432/x",
+        db_sslmode="verify-full",
+    )
+    assert check_transit_posture(s) == []
+
+
+def test_ipv6_loopback_minio_has_no_warning():
+    s = Settings(object_store="minio", minio_endpoint="[::1]:9000", minio_secure=False)
+    assert check_transit_posture(s) == []
+
+
 def test_apply_sslmode_appends_when_absent_and_preserves_when_present():
     assert apply_sslmode("postgresql://u:p@h/x", "require").endswith("sslmode=require")
     assert (

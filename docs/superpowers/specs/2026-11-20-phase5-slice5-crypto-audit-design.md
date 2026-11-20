@@ -208,9 +208,9 @@ line becomes:
   dev-key-signed). Each existing `audit.emit(record, self._audit_path)` call becomes
   `audit.emit(record, self._audit_path, key=self._audit_key, cipher=self._audit_cipher)`. **No
   change to retrieval/authz logic, outcomes, or the one-record-per-path invariant.** A signing
-  fault is impossible for stdlib HMAC on valid inputs; a *cipher* fault on the opt-in encrypt
-  path is wrapped like the sibling store faults (`except … → FETCH_ERROR`, one audit record is
-  moot since the fault is at the audit write — see §5.3 note).
+  fault is impossible for stdlib HMAC on valid inputs; a *cipher* fault on the opt-in encrypt path
+  (the success-path emits are **unguarded**) fails **closed** — the answer is computed but never
+  returned (a 500, never un-audited data). Only `_emit_terminal` guards its own emit (see §5.5).
 - **`deps.get_service`** resolves `audit_key = secret_provider.require("audit_signing_key")`
   (dev default in dev) and `audit_cipher = make_cipher(settings)`.
 
@@ -274,15 +274,19 @@ resolvable key+cipher. In the **default dev** config every secret is a valid dev
 `with`) does **not** run the lifespan ⇒ existing non-context TestClient tests are unaffected; a
 `with TestClient(app)` exercises the gate (dev ⇒ pass).
 
-**`emit` is total at runtime**, so "one record per request, never an unhandled 500" holds.
-Signing (`hmac`/`sha256` over a pydantic dump) has no failure mode on valid inputs; the only
-raising path is `_chain_head` decrypt/parse, and startup validation + the single-process flock
-writer + a consistent key/cipher guarantee the head always parses at runtime. Belt-and-suspenders:
-the service wraps `emit` in the same `except Exception → FETCH_ERROR` backstop used for
-store/generator faults, and `_emit_terminal` (the fault-path emitter) guards its own `emit` so a
-terminal-path audit failure **logs and returns the already-decided outcome** instead of raising a
-second exception. An externally corrupted local log mid-run is outside the request-input threat
-model (it is what `verify_chain` exists to *detect*), and even then the backstop blocks a 500.
+**`emit` is total at runtime** for well-formed input, so "one record per request, never an
+unhandled 500" holds. Signing (`hmac`/`sha256` over a pydantic dump) has no failure mode on valid
+inputs; the only raising path is `parse_chain_head` decrypt/parse, and startup validation + the
+single-process flock writer + a consistent key/cipher guarantee the head always parses at runtime.
+The two emit paths are asymmetric **by design, and the asymmetry is the correct one for an audit
+product**: the success paths call `emit` **unguarded**, so an audit-write fault there fails
+**closed** — the answer is computed but never returned to the caller (a 500, never un-audited
+data). `_emit_terminal` (the fault-path emitter, called from *inside* the store/generator `except`
+arms) guards its own `emit`, so a terminal-path audit failure **logs the failure type and returns
+the already-decided refusal** instead of raising a second, masking exception. The residual is a
+lost refusal record during an audit-system fault — an integrity gap, not a disclosure, accepted
+here (§9). An externally corrupted local log mid-run is outside the request-input threat model (it
+is what `verify_chain` exists to *detect*).
 
 **Offline tools (Q4).** `fetch_cve` (`research_from_source`), `demo/correlation.py`, and
 `evaluation/benchmark.py` build their own `ResearchService` with the **default dev key +
