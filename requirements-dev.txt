@@ -121,7 +121,7 @@ packageurl-python==0.17.6
     # via
     #   cyclonedx-bom
     #   cyclonedx-python-lib
-packaging==26.3
+packaging==26.4
     # via
     #   black
     #   build
