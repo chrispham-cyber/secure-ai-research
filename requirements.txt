@@ -52,7 +52,7 @@ python-dotenv==1.2.4
     #   pydantic-settings
     #   secure-ai-research (pyproject.toml)
     #   uvicorn
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via uvicorn
 starlette==1.10.0
     # via fastapi
