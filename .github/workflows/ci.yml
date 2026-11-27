@@ -66,7 +66,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: sigstore/cosign-installer@v3.7.0
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Verify release SBOM signature (gates once signed; skips until then)
         run: |
           if [ -f sbom/cosign.pub ] && [ -f sbom/release-sbom.cdx.json.sig ]; then
