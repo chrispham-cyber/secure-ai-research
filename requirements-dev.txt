@@ -188,7 +188,7 @@ python-dotenv==1.2.4
     #   uvicorn
 pytokens==0.4.1
     # via black
-pyyaml==6.0.3
+pyyaml==6.0.4
     # via
     #   pre-commit
     #   uvicorn
